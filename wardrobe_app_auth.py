@@ -2049,6 +2049,7 @@ with tab3:
                                 status.write("3) Scoring candidates.")
                                 prog = st.progress(0)
                                 scored = []
+                                scored_all = []
                                 for j, m_doc in enumerate(pool, start=1):
                                     docs = {"shirt": None, "pants": None, "shoes": None}
                                     docs[part_a] = a_doc
@@ -2056,8 +2057,10 @@ with tab3:
                                     docs[missing] = m_doc
 
                                     sc = score_combo_fast(docs["shirt"], docs["pants"], docs["shoes"], ipca, mlp, device)
+                                    combo_row = (sc, str(docs["shirt"]["_id"]), str(docs["pants"]["_id"]), str(docs["shoes"]["_id"]))
+                                    scored_all.append(combo_row)
                                     if sc >= threshold:
-                                        scored.append((sc, str(docs["shirt"]["_id"]), str(docs["pants"]["_id"]), str(docs["shoes"]["_id"])))
+                                        scored.append(combo_row)
 
                                     if j % 20 == 0:
                                         prog.progress(min(1.0, j / max(1, len(pool))))
@@ -2065,8 +2068,13 @@ with tab3:
                                 prog.progress(1.0)
                                 scored.sort(key=lambda x: x[0], reverse=True)
                                 scored = scored[:top_k]
+                                if not scored and scored_all:
+                                    scored_all.sort(key=lambda x: x[0], reverse=True)
+                                    scored = scored_all[:top_k]
+                                    st.session_state.last_toast = "No outfits met Min score. Showing best available matches."
+                                else:
+                                    st.session_state.last_toast = None
                                 st.session_state.match2_results = scored
-                                st.session_state.last_toast = None
 
                                 status.update(label="✅ Done", state="complete", expanded=False)
 
