@@ -11,7 +11,10 @@ import numpy as np
 from PIL import Image
 
 import streamlit as st
-from dotenv import load_dotenv
+try:
+    from dotenv import load_dotenv
+except Exception:
+    load_dotenv = None
 
 from pymongo import MongoClient
 import gridfs
@@ -55,6 +58,29 @@ LEGAL_CONSENT_TEXT = f"I agree to the {APP_BRAND} Terms of Use and Privacy Polic
 LEGAL_CONSENT_TEXT_HASH = hashlib.sha256(
     f"{LEGAL_CONSENT_TEXT}|terms:{TERMS_VERSION}|privacy:{PRIVACY_VERSION}".encode("utf-8")
 ).hexdigest()
+
+
+def get_config_value(key: str, default: str = "") -> str:
+    try:
+        val = st.secrets.get(key, None)
+    except Exception:
+        val = None
+
+    if isinstance(val, str):
+        val = val.strip()
+    if val:
+        return val
+
+    if load_dotenv is not None:
+        try:
+            load_dotenv(override=True)
+        except Exception:
+            pass
+
+    env_val = os.environ.get(key, default)
+    if isinstance(env_val, str):
+        env_val = env_val.strip()
+    return env_val
 
 
 # =========================
@@ -658,11 +684,10 @@ def score_from_parts(shirt: np.ndarray, pants: np.ndarray, shoes: np.ndarray, ip
 # =========================
 @st.cache_resource
 def mongo():
-    load_dotenv(override=True)
-    uri = os.environ.get("MONGO_URI", "").strip()
-    db_name = os.environ.get("MONGO_DB", "Wardrobe_db").strip()
+    uri = get_config_value("MONGO_URI", "")
+    db_name = get_config_value("MONGO_DB", "Wardrobe_db") or "Wardrobe_db"
     if not uri:
-        raise RuntimeError("Missing MONGO_URI in .env")
+        raise RuntimeError("Missing MONGO_URI in Streamlit secrets or .env")
 
     client = MongoClient(uri, serverSelectionTimeoutMS=8000)
     db = client[db_name]
@@ -688,9 +713,8 @@ def fs_get_bytes(uri: str, db_name: str, file_id_str: str) -> bytes:
 
 
 def get_image_from_fs(fs, file_id_str: str) -> Image.Image:
-    load_dotenv(override=True)
-    uri = os.environ.get("MONGO_URI", "").strip()
-    db_name = os.environ.get("MONGO_DB", "Wardrobe_db").strip()
+    uri = get_config_value("MONGO_URI", "")
+    db_name = get_config_value("MONGO_DB", "Wardrobe_db") or "Wardrobe_db"
     data = fs_get_bytes(uri, db_name, file_id_str)
     return Image.open(io.BytesIO(data))
 

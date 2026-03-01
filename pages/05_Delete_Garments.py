@@ -4,7 +4,10 @@ import os
 
 import gridfs
 from bson import ObjectId
-from dotenv import load_dotenv
+try:
+    from dotenv import load_dotenv
+except Exception:
+    load_dotenv = None
 from PIL import Image
 from pymongo import MongoClient
 import streamlit as st
@@ -18,13 +21,35 @@ inject_glass_css(hide_sidebar=True)
 render_top_nav(active="app")
 
 
+def get_config_value(key: str, default: str = "") -> str:
+    try:
+        val = st.secrets.get(key, None)
+    except Exception:
+        val = None
+
+    if isinstance(val, str):
+        val = val.strip()
+    if val:
+        return val
+
+    if load_dotenv is not None:
+        try:
+            load_dotenv(override=True)
+        except Exception:
+            pass
+
+    env_val = os.environ.get(key, default)
+    if isinstance(env_val, str):
+        env_val = env_val.strip()
+    return env_val
+
+
 @st.cache_resource
 def mongo():
-    load_dotenv(override=True)
-    uri = os.environ.get("MONGO_URI", "").strip()
-    db_name = os.environ.get("MONGO_DB", "Wardrobe_db").strip()
+    uri = get_config_value("MONGO_URI", "")
+    db_name = get_config_value("MONGO_DB", "Wardrobe_db") or "Wardrobe_db"
     if not uri:
-        raise RuntimeError("Missing MONGO_URI in .env")
+        raise RuntimeError("Missing MONGO_URI in Streamlit secrets or .env")
     client = MongoClient(uri, serverSelectionTimeoutMS=8000)
     db = client[db_name]
     db.command("ping")
@@ -41,9 +66,8 @@ def fs_get_bytes(uri: str, db_name: str, file_id_str: str) -> bytes:
 
 
 def get_image_from_fs(file_id_str: str) -> Image.Image:
-    load_dotenv(override=True)
-    uri = os.environ.get("MONGO_URI", "").strip()
-    db_name = os.environ.get("MONGO_DB", "Wardrobe_db").strip()
+    uri = get_config_value("MONGO_URI", "")
+    db_name = get_config_value("MONGO_DB", "Wardrobe_db") or "Wardrobe_db"
     data = fs_get_bytes(uri, db_name, file_id_str)
     return Image.open(io.BytesIO(data))
 
