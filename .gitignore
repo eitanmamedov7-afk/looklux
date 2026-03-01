@@ -1,0 +1,28 @@
+# ignore everything by default
+*
+
+# but keep git files
+!.gitignore
+
+# allow only the Streamlit runtime files
+!wardrobe_app_auth.py
+!brand_theme.py
+!requirements.txt
+
+!pages/
+!pages/00_Home.py
+!pages/01_Privacy_Policy.py
+!pages/02_Terms_of_Use.py
+!pages/03_Accessibility_Statement.py
+!pages/04_Beta_Disclaimer.py
+!pages/05_Delete_Garments.py
+!pages/08_About.py
+
+!work/
+!work/model_out/
+!work/model_out/pca_v2.joblib
+!work/model_out/mlp.pt
+
+# never upload env
+.env
+.env.*

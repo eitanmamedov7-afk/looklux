@@ -1,0 +1,10 @@
+fashn-human-parser
+pillow
+opencv-python
+pandas
+openpyxl
+numpy
+tqdm
+scikit-learn
+joblib
+requests
