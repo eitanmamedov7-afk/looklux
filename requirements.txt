@@ -1,6 +1,6 @@
 ﻿fashn-human-parser
 pillow
-opencv-python
+opencv-python-headless
 pandas
 openpyxl
 numpy
@@ -12,3 +12,4 @@ pymongo
 bcrypt
 torchvision
 python-dotenv
+
