@@ -71,12 +71,16 @@ html, body, [class*="css"], [data-testid="stAppViewContainer"] {
     font-weight: 700;
 }
 .nav-active {
-    display: inline-block;
+    display: inline-flex;
+    justify-content: center;
+    align-items: center;
     text-decoration: none;
     color: var(--vc-text);
     border: 1px solid rgba(255,255,255,0.22);
     background: rgba(11,11,11,0.84);
-    padding: 7px 12px;
+    padding: 10px 18px;
+    min-width: 150px;
+    white-space: nowrap;
     border-radius: 999px;
     font-size: 12px;
     letter-spacing: 0.08em;
@@ -84,11 +88,16 @@ html, body, [class*="css"], [data-testid="stAppViewContainer"] {
     font-weight: 700;
 }
 [data-testid="stPageLink"] a {
+    display: inline-flex;
+    justify-content: center;
+    align-items: center;
     text-decoration: none;
     color: var(--vc-muted);
     border: 1px solid rgba(255,255,255,0.14);
     background: rgba(7,7,7,0.72);
-    padding: 7px 12px;
+    padding: 10px 18px;
+    min-width: 150px;
+    white-space: nowrap;
     border-radius: 999px;
     font-size: 12px;
     letter-spacing: 0.08em;
@@ -250,7 +259,7 @@ button[kind="header"] {
 
 def render_top_nav(active: str = "home"):
     st.markdown('<div class="landing-shell"><div class="landing-nav glass-panel">', unsafe_allow_html=True)
-    c1, c2, c3, c4, c5, c6 = st.columns([1.5, 1, 1, 1, 1, 1.3], vertical_alignment="center")
+    c1, c2, c3, c4, c5, c6 = st.columns([1.6, 1.2, 1.2, 1.2, 1.2, 1.6], vertical_alignment="center")
     is_authenticated = st.session_state.get("auth_user") is not None
 
     with c1:

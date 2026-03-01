@@ -4,6 +4,7 @@ import random
 import uuid
 import importlib.util
 import types
+import colorsys
 from datetime import datetime, timezone
 from pathlib import Path
 import base64
@@ -295,7 +296,12 @@ st.markdown(
         color: var(--vc-muted);
         border: 1px solid rgba(255,255,255,0.14);
         background: rgba(7,7,7,0.72);
-        padding: 7px 12px;
+        padding: 10px 18px;
+        min-width: 156px;
+        white-space: nowrap;
+        display: inline-flex;
+        justify-content: center;
+        align-items: center;
         border-radius: 999px;
         font-size: 12px;
         letter-spacing: 0.08em;
@@ -400,7 +406,7 @@ st.markdown(
         width: 100%;
         height: 18px;
         border-radius: 999px;
-        background: linear-gradient(90deg, #8d2626 0%, #a64c22 28%, #b38e2d 52%, #4f7e42 78%, #3f9d5c 100%);
+        background: linear-gradient(90deg, #d63b3b 0%, #e3b93f 50%, #34b56f 100%);
         position: relative;
         border: 1px solid var(--vc-border);
         box-shadow: inset 0 0 0 1px rgba(0,0,0,0.2);
@@ -418,6 +424,14 @@ st.markdown(
         transform: translateX(-50%);
     }
     .scoreNum { font-weight: 800; font-size: 14px; }
+    .rec-box {
+        border-radius: 22px;
+        border: 2px solid var(--vc-border);
+        padding: 18px 18px;
+        background: rgba(18, 18, 18, 0.58);
+        box-shadow: var(--vc-shadow-soft);
+        backdrop-filter: blur(10px);
+    }
 
     .imgbox {
         border-radius: 16px;
@@ -483,17 +497,26 @@ st.markdown(
     }
     [data-testid="stTabs"] [data-baseweb="tab-list"] {
         gap: 8px;
+        flex-wrap: wrap;
     }
     [data-testid="stTabs"] [data-baseweb="tab"] {
         border-radius: 999px;
         border: 1px solid rgba(255,255,255,.16);
         background: rgba(10,10,10,.74);
+        min-width: 170px;
+        padding: 8px 16px;
+        white-space: nowrap;
     }
     [data-testid="stSidebar"] [data-testid="stPageLink"] a {
         border-radius: 999px;
         border: 1px solid rgba(255,255,255,0.16);
         background: rgba(10,10,10,0.72);
-        padding: 6px 10px;
+        padding: 10px 16px;
+        min-width: 156px;
+        white-space: nowrap;
+        display: inline-flex;
+        justify-content: center;
+        align-items: center;
     }
     [data-testid="stSidebar"] [data-testid="stPageLink"] a:hover {
         border-color: rgba(255,255,255,0.28);
@@ -596,8 +619,9 @@ def render_legal_links_in_sidebar():
 
 def score_to_hsl(score01: float) -> str:
     s = max(0.0, min(1.0, float(score01)))
-    light = int(30 + (s * 52))  # dark gray -> near white
-    return f"hsl(0 0% {light}%)"
+    hue = 120.0 * s  # 0=red, 60=yellow, 120=green
+    r, g, b = colorsys.hls_to_rgb(hue / 360.0, 0.52, 0.70)
+    return f"rgb({int(r * 255)}, {int(g * 255)}, {int(b * 255)})"
 
 def image_to_png_bytes(img: Image.Image) -> bytes:
     buf = io.BytesIO()
@@ -1216,7 +1240,7 @@ def show_outfit_card(fs, score: float, s_doc, p_doc, f_doc):
             st.write("Image error:", e)
 
     with col2:
-        st.markdown(f'<div class="card" style="border-color:{border};">', unsafe_allow_html=True)
+        st.markdown(f'<div class="rec-box" style="border-color:{border};">', unsafe_allow_html=True)
         traffic_bar(score)
         st.markdown("</div>", unsafe_allow_html=True)
 
@@ -1795,9 +1819,9 @@ with tab2:
     st.subheader("Pick 1 item and find matches (images only)")
     cand_each = st.slider("Candidates per missing part", 20, 200, 80, 10)
 
-    start_part = st.selectbox("Choose start type", ["בחר סוג..."] + PART_ORDER, key="m1_start_part")
+    start_part = st.selectbox("Choose start type", ["Choose type..."] + PART_ORDER, key="m1_start_part")
     if start_part not in PART_ORDER:
-        st.info("בחר סוג כדי להציג את הארון.")
+        st.info("Choose a type to display your wardrobe.")
     else:
         sel_key = f"pick_1_{start_part}"
         chosen = pick_item_gallery(
@@ -1910,15 +1934,15 @@ with tab3:
     st.subheader("Pick 2 items and complete the outfit (images only)")
     cand_each2 = st.slider("Candidates for missing part", 20, 300, 120, 10)
 
-    part_a = st.selectbox("First type", ["בחר סוג..."] + PART_ORDER, key="m2_part_a")
+    part_a = st.selectbox("First type", ["Choose type..."] + PART_ORDER, key="m2_part_a")
     if part_a in PART_ORDER:
-        opts_b = ["בחר סוג..."] + [p for p in PART_ORDER if p != part_a]
+        opts_b = ["Choose type..."] + [p for p in PART_ORDER if p != part_a]
     else:
-        opts_b = ["בחר סוג..."] + PART_ORDER
+        opts_b = ["Choose type..."] + PART_ORDER
     part_b = st.selectbox("Second type", opts_b, key="m2_part_b")
 
     if part_a not in PART_ORDER or part_b not in PART_ORDER:
-        st.info("בחר 2 סוגים כדי להתחיל. לא יוצגו תמונות לפני הבחירה.")
+        st.info("Choose 2 types to begin. No images are shown before selection.")
     else:
         cur = (part_a, part_b)
         prev = st.session_state.get("m2_prev_parts")
@@ -1999,7 +2023,7 @@ with tab3:
                 st.divider()
 
                 if not st.session_state.get("m2_confirmed", False):
-                    st.info("כדי להמשיך, אשר את הבחירה של שני הבגדים.")
+                    st.info("To continue, confirm the selection of both garments.")
                     if st.button("Confirm selection", use_container_width=True):
                         st.session_state["m2_confirmed"] = True
                         st.session_state.match2_results = []
