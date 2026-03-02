@@ -71,6 +71,43 @@ def get_config_value(key: str, default: str = "") -> str:
     return default
 
 
+def get_inference_status() -> dict[str, Any]:
+    has_local = (
+        torch is not None
+        and models is not None
+        and transforms is not None
+        and FashnHumanParser is not None
+        and bool(LABELS_TO_IDS)
+    )
+    has_remote = bool(INFERENCE_BASE_URL)
+
+    if has_remote:
+        return {
+            "enabled": True,
+            "mode": "remote",
+            "title": "Cloud Inference Enabled",
+            "message": "Uploads are processed through the configured remote inference service.",
+        }
+
+    if has_local:
+        return {
+            "enabled": True,
+            "mode": "local",
+            "title": "Local Inference Enabled",
+            "message": "Uploads are processed using local parser + embedding models.",
+        }
+
+    return {
+        "enabled": False,
+        "mode": "disabled",
+        "title": "Upload Inference Disabled",
+        "message": (
+            "Image extraction/upload processing is disabled in this deployment. "
+            "Set LOOKLUX_INFERENCE_URL to enable cloud inference."
+        ),
+    }
+
+
 def now_utc() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -627,11 +664,9 @@ def extract_parts_from_upload(upload_bytes: bytes) -> tuple[dict[str, Image.Imag
             return None, None, f"Remote inference failed: {error}"
 
     error = (
-        "Image extraction is unavailable in this Vercel runtime because ML dependencies are too large "
-        "for Lambda storage. Set LOOKLUX_INFERENCE_URL to a remote inference service."
+        "Image extraction is unavailable in this deployment because local ML dependencies are not installed. "
+        "Set LOOKLUX_INFERENCE_URL to a remote inference service."
     )
-    if PARSER_IMPORT_ERROR is not None:
-        error = f"{error} ({PARSER_IMPORT_ERROR})"
     return None, None, error
 
 
@@ -688,8 +723,8 @@ def process_single_upload(upload_bytes: bytes, customer_id: str) -> tuple[str, n
         return part_guess, emb, save_source_img
 
     raise RuntimeError(
-        "Single-garment processing is unavailable in this Vercel runtime because ML dependencies are too large "
-        "for Lambda storage. Set LOOKLUX_INFERENCE_URL to a remote inference service."
+        "Single-garment processing is unavailable in this deployment because local ML dependencies are not installed. "
+        "Set LOOKLUX_INFERENCE_URL to a remote inference service."
     )
 
 

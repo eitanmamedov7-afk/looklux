@@ -257,6 +257,67 @@ button:hover, .button-link:hover {
   padding-top: 12px;
 }
 
+.status-card h3 {
+  margin: 4px 0 6px;
+}
+
+.status-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.status-badge {
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,0.2);
+  padding: 7px 10px;
+  font-size: 11px;
+  letter-spacing: 0.09em;
+  font-weight: 700;
+}
+
+.status-local {
+  background: rgba(40, 110, 68, 0.28);
+  color: #d8f5e0;
+}
+
+.status-remote {
+  background: rgba(40, 73, 120, 0.3);
+  color: #d9ecff;
+}
+
+.status-disabled {
+  background: rgba(140, 48, 48, 0.28);
+  color: #ffdede;
+}
+
+.notice-card {
+  margin-top: 10px;
+  border-radius: 16px;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(8,8,8,0.62);
+  padding: 12px;
+}
+
+.notice-card h4 {
+  margin: 0 0 8px;
+}
+
+.subtle-list {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--vc-muted);
+  line-height: 1.6;
+}
+
+.disabled-pane {
+  border-style: dashed;
+  border-color: rgba(255,255,255,0.2);
+  background: rgba(8,8,8,0.48);
+}
+
 .legal-card h3 { margin: 10px 0 6px; }
 .legal-card p, .legal-card li { color: var(--vc-muted); line-height: 1.6; }
 

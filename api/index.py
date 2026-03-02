@@ -241,6 +241,11 @@ def handle_auth_post(action: str) -> bool:
 
 
 def action_upload_outfit(user: dict[str, Any], filters: dict[str, Any]) -> None:
+    inference_status = core.get_inference_status()
+    if not inference_status.get("enabled"):
+        flash(str(inference_status.get("message", "Upload inference is unavailable.")), "error")
+        return
+
     file = request.files.get("upload_outfit")
     if file is None or file.filename is None or file.filename == "":
         flash("Please upload an outfit image.", "error")
@@ -374,6 +379,11 @@ def action_confirm_outfit_review(user: dict[str, Any]) -> None:
 
 
 def action_upload_single(user: dict[str, Any]) -> None:
+    inference_status = core.get_inference_status()
+    if not inference_status.get("enabled"):
+        flash(str(inference_status.get("message", "Upload inference is unavailable.")), "error")
+        return
+
     file = request.files.get("upload_garment")
     if file is None or file.filename is None or file.filename == "":
         flash("Please upload a garment image.", "error")
@@ -750,6 +760,8 @@ def app_page():
             "part_guess": pending_single.get("part_guess"),
         }
 
+    upload_inference = core.get_inference_status()
+
     return render_template(
         "app.html",
         active_nav="app",
@@ -766,6 +778,7 @@ def app_page():
         pending_single=pending_single,
         pending_single_image=pending_single_image,
         pending_single_similar=pending_single_similar,
+        upload_inference=upload_inference,
         saved_cards=saved_cards,
         saved_total=total_saved,
         saved_start=start_idx + 1 if total_saved else 0,

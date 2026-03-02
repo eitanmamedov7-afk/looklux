@@ -42,6 +42,28 @@
 </nav>
 
 {% if tab == 'add' %}
+  <section class="card section-tight status-card">
+    <div class="status-header">
+      <div>
+        <p class="kicker">Upload Engine</p>
+        <h3>{{ upload_inference.title }}</h3>
+      </div>
+      <span class="status-badge status-{{ upload_inference.mode }}">{{ upload_inference.mode|upper }}</span>
+    </div>
+    <p class="muted">{{ upload_inference.message }}</p>
+    {% if not upload_inference.enabled %}
+      <div class="notice-card">
+        <h4>How to enable image uploads</h4>
+        <ol class="subtle-list">
+          <li>Deploy a remote inference endpoint with `extract-parts` and `single-garment` routes.</li>
+          <li>Set `LOOKLUX_INFERENCE_URL` in your Vercel project environment variables.</li>
+          <li>Redeploy so uploads are routed to the remote service.</li>
+        </ol>
+      </div>
+    {% endif %}
+  </section>
+
+  {% if upload_inference.enabled %}
   <section class="card section-tight">
     <h3>Upload outfit image (shirt + pants + shoes)</h3>
     <form method="post" enctype="multipart/form-data" action="{{ url_for('app_page', tab='add') }}" class="form-stack">
@@ -133,6 +155,17 @@
       </div>
     {% endif %}
   </section>
+  {% else %}
+  <section class="card section-tight disabled-pane">
+    <h3>Upload outfit image (shirt + pants + shoes)</h3>
+    <p class="muted">Outfit upload is currently disabled for this deployment.</p>
+  </section>
+
+  <section class="card section-tight disabled-pane">
+    <h3>Add single garment (auto-detect type)</h3>
+    <p class="muted">Single garment upload is currently disabled for this deployment.</p>
+  </section>
+  {% endif %}
 {% endif %}
 
 {% if tab == 'match1' %}
