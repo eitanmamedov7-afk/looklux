@@ -1696,22 +1696,33 @@ with tab1:
                     status.write("1) Loading models (cached).")
                     device, parser, resnet, preprocess, ipca, mlp = load_models()
 
-                    status.write("2) Computing garment embedding.")
+                    status.write("2) Detecting type (parser → fallback similarity).")
                     img_rgba = Image.open(io.BytesIO(up2_bytes)).convert("RGBA")
-                    emb = emb_from_pil(img_rgba, device, resnet, preprocess)
-
-                    status.write("3) Detecting type (parser → fallback similarity).")
                     tmp_path = Path("work/_tmp_single.png")
                     tmp_path.parent.mkdir(parents=True, exist_ok=True)
                     tmp_path.write_bytes(up2_bytes)
 
                     part_guess = infer_part_from_parser(parser, str(tmp_path))
+                    emb_full = emb_from_pil(img_rgba, device, resnet, preprocess)
                     if part_guess is None:
-                        part_guess = infer_part_by_similarity(db, customer_id, emb)
+                        part_guess = infer_part_by_similarity(db, customer_id, emb_full)
                     if part_guess is None:
                         part_guess = "shirt"
                         st.warning("Could not infer type confidently. Defaulting to 'shirt'.")
                     st.info(f"Detected type: {part_guess}")
+
+                    status.write("3) Computing garment embedding.")
+                    emb_source_img = img_rgba
+                    emb = emb_full
+                    if parser is not None and LABELS_TO_IDS and part_guess in PARTS:
+                        try:
+                            seg_single = parser.predict(str(tmp_path))
+                            cut = cutout_part_rgba(img_rgba, seg_single, PARTS[part_guess], crop=True)
+                            if cut is not None:
+                                emb_source_img = cut
+                                emb = emb_from_pil(emb_source_img, device, resnet, preprocess)
+                        except Exception:
+                            pass
 
                     tags_final = list(tags2)
                     if auto_style2 and not tags_final:
@@ -1724,7 +1735,7 @@ with tab1:
                     sim_doc, sim = find_most_similar_garment(db, customer_id, part_guess, emb)
                     if sim_doc is not None and sim >= GARMENT_SIMILARITY_WARN_THRESHOLD:
                         token = make_pending_token("single")
-                        img_path = save_pending_image(token, "img", img_rgba)
+                        img_path = save_pending_image(token, "img", emb_source_img)
                         emb_path = save_pending_embedding(token, "emb", emb)
                         cleanup_pending_single_payload(st.session_state.get("pending_single_upload"))
                         st.session_state.pending_single_upload = {
@@ -1743,7 +1754,16 @@ with tab1:
                     else:
                         status.write("5) Saving to wardrobe.")
                         try:
-                            _ = save_garment(db, fs, customer_id, part_guess, img_rgba, emb, tags_final, source="manual_auto")
+                            _ = save_garment(
+                                db,
+                                fs,
+                                customer_id,
+                                part_guess,
+                                emb_source_img,
+                                emb,
+                                tags_final,
+                                source="manual_auto",
+                            )
                             remember_upload_sha(db, customer_id, upload_sha, kind="single_garment_upload", filename=up2.name)
                             cleanup_pending_single_payload(st.session_state.get("pending_single_upload"))
                             st.session_state.pending_single_upload = None
