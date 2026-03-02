@@ -1,0 +1,54 @@
+﻿{% extends "base.html" %}
+{% block title %}{{ brand }} | Home{% endblock %}
+{% block content %}
+<div class="glass-panel hero-panel">
+  <p class="eyebrow">Navigation Landing</p>
+  <h1 class="hero-title">{{ brand }} Helps You Understand Visual Data With Confidence.</h1>
+  <p class="hero-sub">
+    Premium model-guided analysis in a clean, high-trust interface. Start here to access the platform,
+    authenticate, and review the full inference flow.
+  </p>
+</div>
+
+<div class="section-grid section-tight">
+  <article class="glass-panel section-panel">
+    <h4>Input Parsing</h4>
+    <p>FashnHumanParser segments image regions for clean downstream signals.</p>
+  </article>
+  <article class="glass-panel section-panel">
+    <h4>Feature Engine</h4>
+    <p>Frozen ResNet50 embeddings capture stable high-level visual representations.</p>
+  </article>
+  <article class="glass-panel section-panel">
+    <h4>Scoring Head</h4>
+    <p>PCA + MLP convert feature vectors into compact compatibility scores.</p>
+  </article>
+</div>
+
+<div class="glass-panel hero-panel section-tight">
+  <p class="eyebrow">How It Works</p>
+  <h2 class="title">Step-by-Step Inference Flow</h2>
+  <div class="section-grid">
+    <article class="card">
+      <p class="kicker">Step 1</p>
+      <h4>Upload</h4>
+      <p class="muted">Users submit image input inside the authenticated workspace.</p>
+    </article>
+    <article class="card">
+      <p class="kicker">Step 2</p>
+      <h4>Segment</h4>
+      <p class="muted">Parser isolates garment regions and prepares structured masks.</p>
+    </article>
+    <article class="card">
+      <p class="kicker">Step 3</p>
+      <h4>Embed</h4>
+      <p class="muted">ResNet50 generates normalized feature embeddings for each part.</p>
+    </article>
+    <article class="card">
+      <p class="kicker">Step 4</p>
+      <h4>Score</h4>
+      <p class="muted">PCA + MLP compute output scores and decision-ready signals.</p>
+    </article>
+  </div>
+</div>
+{% endblock %}

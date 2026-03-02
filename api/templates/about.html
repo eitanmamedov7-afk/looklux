@@ -1,0 +1,27 @@
+﻿{% extends "base.html" %}
+{% block title %}{{ brand }} | About{% endblock %}
+{% block content %}
+<div class="glass-panel hero-panel">
+  <p class="eyebrow">About {{ brand }}</p>
+  <h1 class="hero-title">Focused Intelligence, Premium Interaction.</h1>
+  <p class="hero-sub">
+    {{ brand }} is built for teams and individuals who need visual analysis with clear scoring logic.
+    The platform combines robust model execution with a calm, trust-focused interface.
+  </p>
+</div>
+
+<div class="section-grid section-tight">
+  <article class="glass-panel section-panel">
+    <h4>Principle 01</h4>
+    <p>Clarity first: every step of processing should be understandable and reviewable.</p>
+  </article>
+  <article class="glass-panel section-panel">
+    <h4>Principle 02</h4>
+    <p>Signal over noise: compact interfaces with strong visual hierarchy.</p>
+  </article>
+  <article class="glass-panel section-panel">
+    <h4>Principle 03</h4>
+    <p>Responsible speed: fast workflows with confidence-aware outputs.</p>
+  </article>
+</div>
+{% endblock %}

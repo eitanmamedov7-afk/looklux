@@ -1,4 +1,5 @@
-﻿fashn-human-parser
+﻿flask
+fashn-human-parser
 pillow
 opencv-python-headless
 pandas
@@ -12,4 +13,3 @@ pymongo
 bcrypt
 torchvision
 python-dotenv
-

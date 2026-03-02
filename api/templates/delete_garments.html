@@ -1,0 +1,46 @@
+﻿{% extends "base.html" %}
+{% block title %}{{ brand }} | Delete Garments{% endblock %}
+{% block content %}
+<div class="glass-panel hero-panel">
+  <p class="eyebrow">Account Tools</p>
+  <h1 class="title">Delete Garments</h1>
+  <p class="hero-sub">Delete garments safely. Related saved outfits will be removed automatically.</p>
+</div>
+
+<section class="card section-tight">
+  <form method="get" action="{{ url_for('delete_garments_page') }}" class="form-grid">
+    <label>Garment type
+      <select name="part">
+        <option value="all" {% if part_filter == 'all' %}selected{% endif %}>all</option>
+        <option value="shirt" {% if part_filter == 'shirt' %}selected{% endif %}>shirt</option>
+        <option value="pants" {% if part_filter == 'pants' %}selected{% endif %}>pants</option>
+        <option value="shoes" {% if part_filter == 'shoes' %}selected{% endif %}>shoes</option>
+      </select>
+    </label>
+    <label>Items shown
+      <input type="number" name="page_size" min="10" max="200" value="{{ page_size }}" />
+    </label>
+    <label>Page
+      <input type="number" name="page" min="1" max="{{ total_pages }}" value="{{ page_num }}" />
+    </label>
+    <div class="form-actions"><button type="submit">Apply</button></div>
+  </form>
+  <p class="muted">Showing {{ start_idx }}-{{ end_idx }} of {{ total }} garment(s)</p>
+</section>
+
+<section class="results-grid section-tight">
+  {% for card in cards %}
+    <article class="card outfit-card">
+      {% if card.image_fs_id %}
+        <img src="{{ url_for('media_file', file_id=card.image_fs_id) }}" alt="{{ card.part }}" class="single-frame" />
+      {% endif %}
+      <p><strong>{{ card.part }}</strong></p>
+      <p class="muted">tags: {{ card.tags }} | related outfits: {{ card.related_outfits }} | created: {{ card.created_at }}</p>
+      <form method="post" action="{{ url_for('delete_garments_page', part=part_filter, page_size=page_size, page=page_num) }}">
+        <input type="hidden" name="garment_id" value="{{ card.id }}" />
+        <button type="submit">Delete garment</button>
+      </form>
+    </article>
+  {% endfor %}
+</section>
+{% endblock %}

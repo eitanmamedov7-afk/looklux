@@ -1,0 +1,20 @@
+﻿{% extends "base.html" %}
+{% block title %}{{ brand }} | Beta Disclaimer{% endblock %}
+{% block content %}
+<div class="glass-panel hero-panel">
+  <p class="eyebrow">Legal</p>
+  <h1 class="title">Beta Disclaimer / Private Preview Notice</h1>
+  <p class="hero-sub">Effective date: {{ policy_date }}</p>
+</div>
+
+<div class="card legal-card section-tight">
+  <p>{{ brand }} is currently in a limited beta / private preview.</p>
+  <ul>
+    <li>The service is experimental and may be inaccurate.</li>
+    <li>Provided as is and as available.</li>
+    <li>Not professional advice.</li>
+    <li>Warranties are disclaimed and liability is limited to the maximum extent permitted by law.</li>
+  </ul>
+  <p>Contact: {{ contact_email }}</p>
+</div>
+{% endblock %}

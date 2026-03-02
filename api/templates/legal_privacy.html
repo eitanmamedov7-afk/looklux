@@ -1,0 +1,32 @@
+﻿{% extends "base.html" %}
+{% block title %}{{ brand }} | Privacy Policy{% endblock %}
+{% block content %}
+<div class="glass-panel hero-panel">
+  <p class="eyebrow">Legal</p>
+  <h1 class="title">Privacy Policy</h1>
+  <p class="hero-sub">Effective date: {{ policy_date }} | Last updated: {{ policy_date }}</p>
+</div>
+
+<div class="card legal-card section-tight">
+  <h3>1) Who We Are</h3>
+  <p>{{ brand }} is a private preview / beta wardrobe and outfit scoring service currently in testing. Contact: {{ contact_email }}</p>
+  <h3>2) Beta Context</h3>
+  <p>The service is experimental and may be changed, interrupted, or removed at any time.</p>
+  <h3>3) Data We Collect</h3>
+  <ul>
+    <li>Account data: name, email, password hash (bcrypt), creation timestamp.</li>
+    <li>Wardrobe/outfit data: uploaded images in Mongo GridFS, embeddings, style tags, hashes, combinations, scores.</li>
+    <li>Operational runtime logs/errors.</li>
+  </ul>
+  <h3>4) Why We Collect Data</h3>
+  <p>Authentication, wardrobe storage, compatibility scoring, duplicate prevention, abuse reduction, and beta diagnostics.</p>
+  <h3>5) Sharing</h3>
+  <p>We do not sell personal data. We may share with service providers as needed or if required by law.</p>
+  <h3>6) Retention</h3>
+  <p>Data is retained until deletion request/account removal, subject to legal obligations.</p>
+  <h3>7) Security</h3>
+  <p>Reasonable safeguards include bcrypt hashing, access controls, and standard security practices.</p>
+  <h3>8) User Rights</h3>
+  <p>You may request access, correction, or deletion by contacting {{ contact_email }}.</p>
+</div>
+{% endblock %}

@@ -1,0 +1,26 @@
+﻿{% extends "base.html" %}
+{% block title %}{{ brand }} | Terms of Use{% endblock %}
+{% block content %}
+<div class="glass-panel hero-panel">
+  <p class="eyebrow">Legal</p>
+  <h1 class="title">Terms of Use</h1>
+  <p class="hero-sub">Effective date: {{ policy_date }} | Terms version: {{ policy_date }}</p>
+</div>
+
+<div class="card legal-card section-tight">
+  <h3>1) Acceptance</h3>
+  <p>By creating an account or using {{ brand }}, you agree to these Terms and the Privacy Policy.</p>
+  <h3>2) Beta / Private Preview</h3>
+  <p>{{ brand }} is experimental, may change or go offline, and is provided as is and as available.</p>
+  <h3>3) No Warranties and Limited Liability</h3>
+  <p>To the maximum extent permitted by law, warranties are disclaimed and liability is limited.</p>
+  <h3>4) User Responsibilities</h3>
+  <p>You must only upload images you own or have rights to use.</p>
+  <h3>5) Account Termination</h3>
+  <p>We may suspend abusive accounts. Users may request deletion.</p>
+  <h3>6) Governing Law</h3>
+  <p>These Terms are governed by laws of Israel.</p>
+  <h3>7) Contact</h3>
+  <p>{{ contact_email }}</p>
+</div>
+{% endblock %}

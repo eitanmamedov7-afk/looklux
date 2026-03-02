@@ -1,0 +1,24 @@
+﻿{% extends "base.html" %}
+{% block title %}{{ brand }} | Accessibility{% endblock %}
+{% block content %}
+<div class="glass-panel hero-panel">
+  <p class="eyebrow">Legal</p>
+  <h1 class="title">Accessibility Statement</h1>
+  <p class="hero-sub">Last reviewed: {{ policy_date }}</p>
+</div>
+
+<div class="card legal-card section-tight">
+  <p>{{ brand }} aims to conform, as far as practical, with Israeli Standard SI 5568 based on WCAG 2.0 Level AA.</p>
+  <h3>Accessibility Measures</h3>
+  <ul>
+    <li>Keyboard navigation for core flows.</li>
+    <li>Clear semantic heading structure.</li>
+    <li>Sufficient text contrast and readable typography.</li>
+    <li>Accessible labels and alt text where relevant.</li>
+  </ul>
+  <h3>Known Limitations</h3>
+  <p>As a beta service, some areas may still need accessibility improvements.</p>
+  <h3>Contact</h3>
+  <p>For accessibility issues: {{ contact_email }}</p>
+</div>
+{% endblock %}

@@ -1,0 +1,53 @@
+﻿{% extends "base.html" %}
+{% block title %}{{ brand }} | App Access{% endblock %}
+{% block content %}
+<div class="glass-panel hero-panel">
+  <p class="eyebrow">Dark Glass Workspace</p>
+  <h1 class="hero-title">A focused landing and navigation surface.</h1>
+  <p class="hero-sub">
+    Clean entry point, grayscale visual language, and smooth motion. Start with access,
+    then move directly into the model-powered workspace.
+  </p>
+</div>
+
+<div class="two-col section-tight">
+  <section class="card">
+    <h3>Login</h3>
+    <form method="post" action="{{ url_for('app_page') }}" class="form-stack">
+      <input type="hidden" name="action" value="login" />
+      <label>Email
+        <input type="email" name="email" required />
+      </label>
+      <label>Password
+        <input type="password" name="password" required />
+      </label>
+      <button type="submit">Login</button>
+    </form>
+  </section>
+
+  <section class="card">
+    <h3>Get Access</h3>
+    <form method="post" action="{{ url_for('app_page') }}" class="form-stack">
+      <input type="hidden" name="action" value="register" />
+      <label>Name
+        <input type="text" name="name" required />
+      </label>
+      <label>Email
+        <input type="email" name="email" required />
+      </label>
+      <label>Password
+        <input type="password" name="password" minlength="6" required />
+      </label>
+      <label class="inline-check">
+        <input type="checkbox" name="accepted_terms" required />
+        <span>{{ legal_consent_text }}</span>
+      </label>
+      <button type="submit">Create account</button>
+    </form>
+    <p class="muted">
+      <a href="{{ url_for('terms_page') }}">Terms of Use</a> |
+      <a href="{{ url_for('privacy_page') }}">Privacy Policy</a>
+    </p>
+  </section>
+</div>
+{% endblock %}

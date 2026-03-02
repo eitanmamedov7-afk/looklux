@@ -1,0 +1,46 @@
+﻿<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{% block title %}{{ brand }}{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}" />
+</head>
+<body>
+  <main class="app-shell">
+    <div class="landing-shell">
+      <div class="landing-nav glass-panel">
+        <div class="brand-pill">{{ brand }}</div>
+        <div class="nav-links">
+          <a class="{% if active_nav == 'home' %}nav-active{% endif %}" href="{{ url_for('home_page') }}">Home</a>
+          <a class="{% if active_nav == 'about' %}nav-active{% endif %}" href="{{ url_for('about_page') }}">About</a>
+          <a class="{% if active_nav == 'legal' %}nav-active{% endif %}" href="{{ url_for('terms_page') }}">Legal</a>
+          <a class="{% if active_nav == 'app' %}nav-active{% endif %}" href="{{ url_for('app_page') }}">App</a>
+          {% if user %}
+            <a class="nav-muted" href="{{ url_for('delete_garments_page') }}">Delete Garments</a>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    <section class="page-shell">
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+          <div class="flash-stack">
+            {% for category, message in messages %}
+              <div class="flash flash-{{ category }}">{{ message }}</div>
+            {% endfor %}
+          </div>
+        {% endif %}
+      {% endwith %}
+
+      {% block content %}{% endblock %}
+    </section>
+
+    <footer class="page-shell card site-footer">
+      <div>{{ brand }}</div>
+      <div>Visual intelligence platform.</div>
+    </footer>
+  </main>
+</body>
+</html>
