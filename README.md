@@ -21,6 +21,7 @@ Set these in Vercel Project Settings -> Environment Variables:
 - `MONGO_DB` (default: `Wardrobe_db`)
 - `APP_SECRET_KEY`
 - `COOKIE_SECURE` (`1` in production)
+- `LOOKLUX_INFERENCE_URL` (optional, only required for image extraction/upload flows when running on Vercel)
 
 You can copy `.env.example` for local setup.
 
@@ -43,3 +44,13 @@ python api/index.py
 6. Add your custom domain in Vercel -> Project -> Domains.
 
 Every `git push` to the connected branch triggers a new Vercel deployment.
+
+## Note on ML dependencies in Vercel
+
+Vercel Python functions have strict storage limits. To keep deployment size under the limit:
+
+- Scoring uses lightweight NumPy MLP weights from `work/model_out/mlp_numpy.npz`.
+- Heavy local ML extractors (Torch/Torchvision/Transformers parser stack) are not bundled by default.
+- Upload/extraction flows require either:
+  - local heavy deps in non-Vercel environments, or
+  - a remote inference service configured via `LOOKLUX_INFERENCE_URL`.

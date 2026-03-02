@@ -2,13 +2,11 @@ from __future__ import annotations
 
 import io
 import math
-import uuid
 from functools import wraps
 from typing import Any
 
 import numpy as np
 from flask import Flask, abort, flash, redirect, render_template, request, send_file, session, url_for
-from PIL import Image
 
 try:
     from . import core
@@ -401,39 +399,15 @@ def action_upload_single(user: dict[str, Any]) -> None:
         flash("Duplicate upload: this exact image was already uploaded.", "error")
         return
 
-    device, parser, resnet, preprocess, _, _ = core.load_models()
-    image_rgba = Image.open(io.BytesIO(img_bytes)).convert("RGBA")
-
-    core.ensure_dirs()
-    temp_path = core.TMP_DIR / f"single_{uuid.uuid4().hex}.png"
-    temp_path.write_bytes(img_bytes)
     try:
-        part_guess = core.infer_part_from_parser(parser, str(temp_path))
-        emb_full = core.emb_from_pil(image_rgba, device, resnet, preprocess)
-        if part_guess is None:
-            part_guess = core.infer_part_by_similarity(customer_id, emb_full)
-        if part_guess is None:
-            part_guess = "shirt"
-            flash("Could not infer type confidently. Defaulting to shirt.", "warning")
+        part_guess, emb, save_source_img = core.process_single_upload(img_bytes, customer_id)
+    except RuntimeError as error:
+        flash(str(error), "error")
+        return
 
-        emb = emb_full
-        save_source_img = image_rgba
-        if parser is not None and core.LABELS_TO_IDS and part_guess in core.PARTS:
-            try:
-                seg = parser.predict(str(temp_path))
-                cut_masked = core.cutout_part_rgba(image_rgba, seg, core.PARTS[part_guess], crop=True)
-                cut_bbox = core.cutout_part_bbox_rgba(image_rgba, seg, core.PARTS[part_guess], crop=True)
-                if cut_masked is not None:
-                    emb = core.emb_from_pil(cut_masked, device, resnet, preprocess)
-                if cut_bbox is not None:
-                    save_source_img = cut_bbox
-            except Exception:
-                pass
-    finally:
-        try:
-            temp_path.unlink(missing_ok=True)
-        except Exception:
-            pass
+    if part_guess not in core.PART_ORDER:
+        part_guess = "shirt"
+        flash("Could not infer type confidently. Defaulting to shirt.", "warning")
 
     tags = request.form.getlist("tags_manual")
     tags = [tag for tag in tags if tag in core.TAG_OPTIONS]
@@ -513,15 +487,20 @@ def action_run_match1(user: dict[str, Any], filters: dict[str, Any]) -> None:
     start_part = request.form.get("start_part", "")
     start_garment_id = request.form.get("start_garment_id", "")
     cand_each = parse_int(request.form.get("cand_each"), 80, 20, 200)
-    results, message = core.run_match_one(
-        str(user["_id"]),
-        start_part,
-        start_garment_id,
-        filters["tags_filter"],
-        cand_each,
-        filters["threshold"],
-        filters["top_k"],
-    )
+    try:
+        results, message = core.run_match_one(
+            str(user["_id"]),
+            start_part,
+            start_garment_id,
+            filters["tags_filter"],
+            cand_each,
+            filters["threshold"],
+            filters["top_k"],
+        )
+    except Exception as error:
+        flash(f"Match failed: {error}", "error")
+        session["match1_results"] = []
+        return
     session["match1_results"] = results
     if message:
         flash(message, "info")
@@ -535,17 +514,22 @@ def action_run_match2(user: dict[str, Any], filters: dict[str, Any]) -> None:
     garment_a_id = request.form.get("garment_a_id", "")
     garment_b_id = request.form.get("garment_b_id", "")
     cand_each = parse_int(request.form.get("cand_each2"), 120, 20, 300)
-    results, message = core.run_match_two(
-        str(user["_id"]),
-        part_a,
-        garment_a_id,
-        part_b,
-        garment_b_id,
-        filters["tags_filter"],
-        cand_each,
-        filters["threshold"],
-        filters["top_k"],
-    )
+    try:
+        results, message = core.run_match_two(
+            str(user["_id"]),
+            part_a,
+            garment_a_id,
+            part_b,
+            garment_b_id,
+            filters["tags_filter"],
+            cand_each,
+            filters["threshold"],
+            filters["top_k"],
+        )
+    except Exception as error:
+        flash(f"Match failed: {error}", "error")
+        session["match2_results"] = []
+        return
     session["match2_results"] = results
     if message:
         flash(message, "info")
@@ -556,13 +540,18 @@ def action_run_match2(user: dict[str, Any], filters: dict[str, Any]) -> None:
 def action_run_recommend(user: dict[str, Any], filters: dict[str, Any]) -> None:
     samples = parse_int(request.form.get("samples"), 5000, 200, 100000)
     max_outfits = parse_int(request.form.get("max_outfits"), 20, 1, 500)
-    results, message = core.run_recommendations(
-        str(user["_id"]),
-        filters["tags_filter"],
-        samples,
-        max_outfits,
-        filters["threshold"],
-    )
+    try:
+        results, message = core.run_recommendations(
+            str(user["_id"]),
+            filters["tags_filter"],
+            samples,
+            max_outfits,
+            filters["threshold"],
+        )
+    except Exception as error:
+        flash(f"Recommend failed: {error}", "error")
+        session["rec_results"] = []
+        return
     session["rec_results"] = results
     if message:
         flash(message, "info")

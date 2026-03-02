@@ -6,6 +6,7 @@ import importlib.util
 import io
 import os
 import random
+import requests
 import threading
 import tempfile
 import types
@@ -19,19 +20,27 @@ import bcrypt
 import gridfs
 import joblib
 import numpy as np
-import torch
-import torch.nn as nn
 from bson import ObjectId
 from bson.binary import Binary
 from dotenv import load_dotenv
 from PIL import Image
 from pymongo import MongoClient
 from pymongo.errors import DuplicateKeyError
-from torchvision import models, transforms
+
+try:
+    import torch
+    import torch.nn as nn
+    from torchvision import models, transforms
+except Exception:
+    torch = None  # type: ignore
+    nn = None  # type: ignore
+    models = None  # type: ignore
+    transforms = None  # type: ignore
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 MODEL_PCA_PATH = ROOT_DIR / "work" / "model_out" / "pca_v2.joblib"
 MODEL_MLP_PATH = ROOT_DIR / "work" / "model_out" / "mlp.pt"
+MODEL_MLP_NUMPY_PATH = ROOT_DIR / "work" / "model_out" / "mlp_numpy.npz"
 RUNTIME_TMP_ROOT = Path(os.environ.get("TMPDIR", tempfile.gettempdir()))
 PENDING_DIR = RUNTIME_TMP_ROOT / "looklux_pending"
 TMP_DIR = RUNTIME_TMP_ROOT / "looklux_tmp"
@@ -50,6 +59,9 @@ LEGAL_CONSENT_TEXT_HASH = hashlib.sha256(
 
 load_dotenv(dotenv_path=ROOT_DIR / ".env", override=False)
 load_dotenv(dotenv_path=ROOT_DIR / ".env.local", override=True)
+
+INFERENCE_BASE_URL = os.environ.get("LOOKLUX_INFERENCE_URL", "").strip()
+INFERENCE_TIMEOUT_SEC = int(os.environ.get("LOOKLUX_INFERENCE_TIMEOUT_SEC", "60"))
 
 
 def get_config_value(key: str, default: str = "") -> str:
@@ -222,70 +234,92 @@ def cosine(a: np.ndarray, b: np.ndarray) -> float:
 
 
 @lru_cache(maxsize=1)
-def load_models() -> tuple[str, Any, nn.Module, Any, Any, nn.Module]:
+def load_models() -> tuple[str, Any, Any, Any, Any, dict[str, np.ndarray]]:
     if not MODEL_PCA_PATH.exists():
         raise RuntimeError(f"Missing PCA file: {MODEL_PCA_PATH}")
-    if not MODEL_MLP_PATH.exists():
-        raise RuntimeError(f"Missing MLP file: {MODEL_MLP_PATH}")
 
     device = "cpu"
-    parser = FashnHumanParser(device="cpu") if FashnHumanParser is not None else None
-
-    resnet = models.resnet50(weights=models.ResNet50_Weights.DEFAULT)
-    resnet.fc = nn.Identity()
-    resnet = resnet.to(device).eval()
-    for parameter in resnet.parameters():
-        parameter.requires_grad = False
-
-    preprocess = transforms.Compose(
-        [
-            transforms.Resize(256),
-            transforms.CenterCrop(224),
-            transforms.ToTensor(),
-            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-        ]
-    )
-
     ipca = joblib.load(MODEL_PCA_PATH)
-    mlp = nn.Sequential(
-        nn.Linear(512, 256),
-        nn.ReLU(),
-        nn.Dropout(0.3),
-        nn.Linear(256, 64),
-        nn.ReLU(),
-        nn.Linear(64, 1),
-    ).to(device).eval()
 
-    checkpoint = torch.load(MODEL_MLP_PATH, map_location=device)
-    mlp.load_state_dict(checkpoint["state_dict"], strict=True)
+    if MODEL_MLP_NUMPY_PATH.exists():
+        with np.load(MODEL_MLP_NUMPY_PATH, allow_pickle=False) as data:
+            mlp = {
+                "w1": data["w1"].astype(np.float32),
+                "b1": data["b1"].astype(np.float32),
+                "w2": data["w2"].astype(np.float32),
+                "b2": data["b2"].astype(np.float32),
+                "w3": data["w3"].astype(np.float32),
+                "b3": data["b3"].astype(np.float32),
+            }
+    elif torch is not None and MODEL_MLP_PATH.exists():
+        checkpoint = torch.load(MODEL_MLP_PATH, map_location=device)
+        state_dict = checkpoint.get("state_dict", checkpoint)
+        mlp = {
+            "w1": state_dict["0.weight"].detach().cpu().numpy().astype(np.float32),
+            "b1": state_dict["0.bias"].detach().cpu().numpy().astype(np.float32),
+            "w2": state_dict["3.weight"].detach().cpu().numpy().astype(np.float32),
+            "b2": state_dict["3.bias"].detach().cpu().numpy().astype(np.float32),
+            "w3": state_dict["5.weight"].detach().cpu().numpy().astype(np.float32),
+            "b3": state_dict["5.bias"].detach().cpu().numpy().astype(np.float32),
+        }
+    else:
+        raise RuntimeError(
+            "Missing lightweight MLP weights. Expected work/model_out/mlp_numpy.npz "
+            "or torch-compatible work/model_out/mlp.pt"
+        )
+
+    parser = None
+    resnet = None
+    preprocess = None
+    if torch is not None and models is not None and transforms is not None:
+        parser = FashnHumanParser(device="cpu") if FashnHumanParser is not None else None
+
+        resnet = models.resnet50(weights=models.ResNet50_Weights.DEFAULT)
+        resnet.fc = nn.Identity()
+        resnet = resnet.to(device).eval()
+        for parameter in resnet.parameters():
+            parameter.requires_grad = False
+
+        preprocess = transforms.Compose(
+            [
+                transforms.Resize(256),
+                transforms.CenterCrop(224),
+                transforms.ToTensor(),
+                transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+            ]
+        )
 
     return device, parser, resnet, preprocess, ipca, mlp
 
 
-@torch.inference_mode()
-def emb_from_pil(pil_img: Image.Image, device: str, resnet: nn.Module, preprocess: Any) -> np.ndarray:
+def emb_from_pil(pil_img: Image.Image, device: str, resnet: Any, preprocess: Any) -> np.ndarray:
+    if torch is None or resnet is None or preprocess is None:
+        raise RuntimeError("Local embedding extractor is unavailable in this deployment.")
     model_input = pil_rgba_to_rgb_on_white(pil_img)
-    tensor = preprocess(model_input).unsqueeze(0).to(device)
-    emb = resnet(tensor).squeeze(0).detach().cpu().numpy().astype(np.float32)
+    with torch.inference_mode():
+        tensor = preprocess(model_input).unsqueeze(0).to(device)
+        emb = resnet(tensor).squeeze(0).detach().cpu().numpy().astype(np.float32)
     return l2(emb)
 
 
-@torch.inference_mode()
 def score_from_parts(
     shirt: np.ndarray,
     pants: np.ndarray,
     shoes: np.ndarray,
     ipca: Any,
-    mlp: nn.Module,
+    mlp: dict[str, np.ndarray],
     device: str,
 ) -> float:
     fused = np.concatenate([shirt, pants, shoes]).astype(np.float32)
     fused = l2(fused)
     z = ipca.transform(fused.reshape(1, -1)).astype(np.float32)
     z = z / (np.linalg.norm(z, axis=1, keepdims=True) + 1e-12)
-    xb = torch.tensor(z, dtype=torch.float32, device=device)
-    prob = torch.sigmoid(mlp(xb)).detach().cpu().numpy().reshape(-1)[0].item()
-    return float(prob)
+    z1 = np.maximum(0.0, z @ mlp["w1"].T + mlp["b1"])
+    z2 = np.maximum(0.0, z1 @ mlp["w2"].T + mlp["b2"])
+    logits = z2 @ mlp["w3"].T + mlp["b3"]
+    logits = np.clip(logits, -60.0, 60.0)
+    prob = 1.0 / (1.0 + np.exp(-logits))
+    return float(prob.reshape(-1)[0])
 
 
 @lru_cache(maxsize=1)
@@ -516,42 +550,147 @@ def infer_part_by_similarity(customer_id: str, emb: np.ndarray) -> str | None:
     return best_part
 
 
+def _decode_data_uri_image(data: str) -> Image.Image:
+    if "," in data:
+        data = data.split(",", 1)[1]
+    raw = base64.b64decode(data.encode("ascii"))
+    with Image.open(io.BytesIO(raw)) as img:
+        return img.convert("RGBA")
+
+
+def _call_remote_inference(endpoint: str, payload: dict[str, Any]) -> dict[str, Any]:
+    if not INFERENCE_BASE_URL:
+        raise RuntimeError("Remote inference is not configured.")
+    url = f"{INFERENCE_BASE_URL.rstrip('/')}/{endpoint.lstrip('/')}"
+    response = requests.post(url, json=payload, timeout=INFERENCE_TIMEOUT_SEC)
+    response.raise_for_status()
+    body = response.json()
+    if isinstance(body, dict) and body.get("error"):
+        raise RuntimeError(str(body["error"]))
+    if not isinstance(body, dict):
+        raise RuntimeError("Remote inference returned an invalid response.")
+    return body
+
+
 def extract_parts_from_upload(upload_bytes: bytes) -> tuple[dict[str, Image.Image] | None, dict[str, np.ndarray] | None, float | str]:
     device, parser, resnet, preprocess, ipca, mlp = load_models()
-    if parser is None or not LABELS_TO_IDS:
-        error = "Human parser is unavailable in this deployment."
-        if PARSER_IMPORT_ERROR is not None:
-            error = f"{error} {PARSER_IMPORT_ERROR}"
-        return None, None, error
+    has_local_extractor = parser is not None and resnet is not None and preprocess is not None and bool(LABELS_TO_IDS)
 
-    ensure_dirs()
-    tmp_path = TMP_DIR / f"upload_{uuid.uuid4().hex}.png"
-    tmp_path.write_bytes(upload_bytes)
-    try:
-        seg = parser.predict(str(tmp_path))
-        img = Image.open(io.BytesIO(upload_bytes)).convert("RGBA")
-
-        cut_imgs: dict[str, Image.Image] = {}
-        embs: dict[str, np.ndarray] = {}
-        missing_parts = []
-        for out_part, model_label in PARTS.items():
-            cut = cutout_part_rgba(img, seg, model_label, crop=True)
-            if cut is None:
-                missing_parts.append(out_part)
-                continue
-            cut_imgs[out_part] = cut
-            embs[out_part] = emb_from_pil(cut, device, resnet, preprocess)
-
-        if missing_parts:
-            return None, None, "Missing parts: " + ", ".join(missing_parts)
-
-        score = score_from_parts(embs["shirt"], embs["pants"], embs["shoes"], ipca, mlp, device)
-        return cut_imgs, embs, score
-    finally:
+    if has_local_extractor:
+        ensure_dirs()
+        tmp_path = TMP_DIR / f"upload_{uuid.uuid4().hex}.png"
+        tmp_path.write_bytes(upload_bytes)
         try:
-            tmp_path.unlink(missing_ok=True)
-        except Exception:
-            pass
+            seg = parser.predict(str(tmp_path))
+            img = Image.open(io.BytesIO(upload_bytes)).convert("RGBA")
+
+            cut_imgs: dict[str, Image.Image] = {}
+            embs: dict[str, np.ndarray] = {}
+            missing_parts = []
+            for out_part, model_label in PARTS.items():
+                cut = cutout_part_rgba(img, seg, model_label, crop=True)
+                if cut is None:
+                    missing_parts.append(out_part)
+                    continue
+                cut_imgs[out_part] = cut
+                embs[out_part] = emb_from_pil(cut, device, resnet, preprocess)
+
+            if missing_parts:
+                return None, None, "Missing parts: " + ", ".join(missing_parts)
+
+            score = score_from_parts(embs["shirt"], embs["pants"], embs["shoes"], ipca, mlp, device)
+            return cut_imgs, embs, score
+        finally:
+            try:
+                tmp_path.unlink(missing_ok=True)
+            except Exception:
+                pass
+
+    if INFERENCE_BASE_URL:
+        try:
+            payload = {"image_b64": base64.b64encode(upload_bytes).decode("ascii")}
+            body = _call_remote_inference("extract-parts", payload)
+            parts = body.get("parts") or {}
+            cut_imgs: dict[str, Image.Image] = {}
+            embs: dict[str, np.ndarray] = {}
+            for part in PART_ORDER:
+                part_obj = parts.get(part) or {}
+                image_b64 = part_obj.get("image_b64")
+                embedding = part_obj.get("embedding")
+                if not image_b64 or embedding is None:
+                    return None, None, f"Missing parts: {part}"
+                cut_imgs[part] = _decode_data_uri_image(str(image_b64))
+                embs[part] = np.asarray(embedding, dtype=np.float32)
+            score = score_from_parts(embs["shirt"], embs["pants"], embs["shoes"], ipca, mlp, device)
+            return cut_imgs, embs, score
+        except Exception as error:
+            return None, None, f"Remote inference failed: {error}"
+
+    error = (
+        "Image extraction is unavailable in this Vercel runtime because ML dependencies are too large "
+        "for Lambda storage. Set LOOKLUX_INFERENCE_URL to a remote inference service."
+    )
+    if PARSER_IMPORT_ERROR is not None:
+        error = f"{error} ({PARSER_IMPORT_ERROR})"
+    return None, None, error
+
+
+def process_single_upload(upload_bytes: bytes, customer_id: str) -> tuple[str, np.ndarray, Image.Image]:
+    device, parser, resnet, preprocess, _, _ = load_models()
+    has_local_extractor = resnet is not None and preprocess is not None
+
+    if has_local_extractor:
+        image_rgba = Image.open(io.BytesIO(upload_bytes)).convert("RGBA")
+        ensure_dirs()
+        temp_path = TMP_DIR / f"single_{uuid.uuid4().hex}.png"
+        temp_path.write_bytes(upload_bytes)
+        try:
+            part_guess = infer_part_from_parser(parser, str(temp_path))
+            emb_full = emb_from_pil(image_rgba, device, resnet, preprocess)
+            if part_guess is None:
+                part_guess = infer_part_by_similarity(customer_id, emb_full)
+            if part_guess is None:
+                part_guess = "shirt"
+
+            emb = emb_full
+            save_source_img = image_rgba
+            if parser is not None and LABELS_TO_IDS and part_guess in PARTS:
+                try:
+                    seg = parser.predict(str(temp_path))
+                    cut_masked = cutout_part_rgba(image_rgba, seg, PARTS[part_guess], crop=True)
+                    cut_bbox = cutout_part_bbox_rgba(image_rgba, seg, PARTS[part_guess], crop=True)
+                    if cut_masked is not None:
+                        emb = emb_from_pil(cut_masked, device, resnet, preprocess)
+                    if cut_bbox is not None:
+                        save_source_img = cut_bbox
+                except Exception:
+                    pass
+
+            return part_guess, emb, save_source_img
+        finally:
+            try:
+                temp_path.unlink(missing_ok=True)
+            except Exception:
+                pass
+
+    if INFERENCE_BASE_URL:
+        payload = {
+            "customer_id": customer_id,
+            "image_b64": base64.b64encode(upload_bytes).decode("ascii"),
+        }
+        body = _call_remote_inference("single-garment", payload)
+        part_guess = str(body.get("part_guess") or "shirt")
+        emb = np.asarray(body.get("embedding") or [], dtype=np.float32)
+        image_b64 = body.get("image_b64")
+        if emb.size == 0 or not image_b64:
+            raise RuntimeError("Remote single-garment inference returned incomplete payload.")
+        save_source_img = _decode_data_uri_image(str(image_b64))
+        return part_guess, emb, save_source_img
+
+    raise RuntimeError(
+        "Single-garment processing is unavailable in this Vercel runtime because ML dependencies are too large "
+        "for Lambda storage. Set LOOKLUX_INFERENCE_URL to a remote inference service."
+    )
 
 
 def make_pending_token(prefix: str) -> str:
@@ -889,7 +1028,7 @@ def run_recommendations(
     return scored[: max(1, int(max_outfits))], None
 
 
-def score_combo_fast(shirt_doc: dict[str, Any], pants_doc: dict[str, Any], shoes_doc: dict[str, Any], ipca: Any, mlp: nn.Module, device: str) -> float:
+def score_combo_fast(shirt_doc: dict[str, Any], pants_doc: dict[str, Any], shoes_doc: dict[str, Any], ipca: Any, mlp: dict[str, np.ndarray], device: str) -> float:
     shirt_vec = decode_vec(shirt_doc)
     pants_vec = decode_vec(pants_doc)
     shoes_vec = decode_vec(shoes_doc)

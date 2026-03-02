@@ -28,6 +28,7 @@ fashn_human_parser/**/*.pyc
 !work/model_out/
 !work/model_out/pca_v2.joblib
 !work/model_out/mlp.pt
+!work/model_out/mlp_numpy.npz
 
 # Never commit secrets or local vercel metadata
 .env
