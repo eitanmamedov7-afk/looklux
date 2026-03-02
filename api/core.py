@@ -7,6 +7,7 @@ import io
 import os
 import random
 import threading
+import tempfile
 import types
 import uuid
 from datetime import datetime, timezone
@@ -31,8 +32,9 @@ from torchvision import models, transforms
 ROOT_DIR = Path(__file__).resolve().parent.parent
 MODEL_PCA_PATH = ROOT_DIR / "work" / "model_out" / "pca_v2.joblib"
 MODEL_MLP_PATH = ROOT_DIR / "work" / "model_out" / "mlp.pt"
-PENDING_DIR = ROOT_DIR / "work" / "_pending"
-TMP_DIR = ROOT_DIR / "work" / "_tmp"
+RUNTIME_TMP_ROOT = Path(os.environ.get("TMPDIR", tempfile.gettempdir()))
+PENDING_DIR = RUNTIME_TMP_ROOT / "vibecheck_pending"
+TMP_DIR = RUNTIME_TMP_ROOT / "vibecheck_tmp"
 
 PARTS = {"shirt": "top", "pants": "pants", "shoes": "feet"}
 PART_ORDER = ["shirt", "pants", "shoes"]

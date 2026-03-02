@@ -7,6 +7,7 @@
 # Keep deployment/runtime files
 !README.md
 !.env.example
+!.python-version
 !requirements.txt
 !vercel.json
 
