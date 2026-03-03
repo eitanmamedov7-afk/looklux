@@ -3,6 +3,8 @@ from __future__ import annotations
 import base64
 import io
 import os
+import sys
+from pathlib import Path
 from functools import lru_cache
 from typing import Any
 
@@ -12,6 +14,11 @@ import torch.nn as nn
 from PIL import Image
 from flask import Flask, jsonify, request
 from torchvision import models, transforms
+
+# Ensure local package imports work when the service runs from inference_service/.
+ROOT_DIR = Path(__file__).resolve().parent.parent
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
 
 from fashn_human_parser import FashnHumanParser, LABELS_TO_IDS
 
