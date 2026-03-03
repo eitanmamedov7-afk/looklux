@@ -17,6 +17,12 @@
 api/**/__pycache__/
 api/**/*.pyc
 
+# Keep separate Render inference service
+!inference_service/
+!inference_service/**
+inference_service/**/__pycache__/
+inference_service/**/*.pyc
+
 # Keep local parser package used by backend
 !fashn_human_parser/
 !fashn_human_parser/**

@@ -60,8 +60,14 @@ LEGAL_CONSENT_TEXT_HASH = hashlib.sha256(
 load_dotenv(dotenv_path=ROOT_DIR / ".env", override=False)
 load_dotenv(dotenv_path=ROOT_DIR / ".env.local", override=True)
 
-INFERENCE_BASE_URL = os.environ.get("LOOKLUX_INFERENCE_URL", "").strip()
+INFERENCE_BASE_URL = os.environ.get("LOOKLUX_INFERENCE_URL", "").strip().rstrip("/")
 INFERENCE_TIMEOUT_SEC = int(os.environ.get("LOOKLUX_INFERENCE_TIMEOUT_SEC", "60"))
+INFERENCE_DISCOVERY_TIMEOUT_SEC = float(os.environ.get("LOOKLUX_INFERENCE_DISCOVERY_TIMEOUT_SEC", "1.5"))
+INFERENCE_EXTRACT_PATH = os.environ.get("LOOKLUX_INFERENCE_EXTRACT_PATH", "/extract-parts").strip() or "/extract-parts"
+INFERENCE_SINGLE_PATH = os.environ.get("LOOKLUX_INFERENCE_SINGLE_PATH", "/single-garment").strip() or "/single-garment"
+INFERENCE_AUTH_HEADER = os.environ.get("LOOKLUX_INFERENCE_AUTH_HEADER", "").strip()
+INFERENCE_AUTH_VALUE = os.environ.get("LOOKLUX_INFERENCE_AUTH_VALUE", "").strip()
+INFERENCE_BEARER_TOKEN = os.environ.get("LOOKLUX_INFERENCE_BEARER_TOKEN", "").strip()
 
 
 def get_config_value(key: str, default: str = "") -> str:
@@ -69,6 +75,60 @@ def get_config_value(key: str, default: str = "") -> str:
     if isinstance(value, str):
         return value.strip()
     return default
+
+
+def _normalize_api_path(path: str) -> str:
+    path = str(path or "").strip()
+    if not path:
+        return "/"
+    if not path.startswith("/"):
+        path = "/" + path
+    return path
+
+
+def _build_remote_headers() -> dict[str, str]:
+    headers: dict[str, str] = {}
+    if INFERENCE_AUTH_HEADER and INFERENCE_AUTH_VALUE:
+        headers[INFERENCE_AUTH_HEADER] = INFERENCE_AUTH_VALUE
+    if INFERENCE_BEARER_TOKEN:
+        headers["Authorization"] = f"Bearer {INFERENCE_BEARER_TOKEN}"
+    return headers
+
+
+def _inference_path_candidates(kind: str) -> list[str]:
+    if kind == "extract":
+        configured = _normalize_api_path(INFERENCE_EXTRACT_PATH)
+        return list(dict.fromkeys([configured, "/extract-parts", "/api/extract-parts"]))
+    if kind == "single":
+        configured = _normalize_api_path(INFERENCE_SINGLE_PATH)
+        return list(dict.fromkeys([configured, "/single-garment", "/api/single-garment"]))
+    return ["/"]
+
+
+def _remote_route_exists(path: str) -> bool:
+    if not INFERENCE_BASE_URL:
+        return False
+    url = f"{INFERENCE_BASE_URL}{_normalize_api_path(path)}"
+    headers = _build_remote_headers()
+    timeout = max(0.5, min(INFERENCE_DISCOVERY_TIMEOUT_SEC, 5.0))
+
+    for method in ("OPTIONS", "HEAD", "GET"):
+        try:
+            response = requests.request(method, url, headers=headers, timeout=timeout, allow_redirects=True)
+            if response.status_code == 404:
+                continue
+            return True
+        except Exception:
+            continue
+    return False
+
+
+@lru_cache(maxsize=2)
+def _resolve_remote_path(kind: str) -> str | None:
+    for path in _inference_path_candidates(kind):
+        if _remote_route_exists(path):
+            return _normalize_api_path(path)
+    return None
 
 
 def get_inference_status() -> dict[str, Any]:
@@ -80,13 +140,24 @@ def get_inference_status() -> dict[str, Any]:
         and bool(LABELS_TO_IDS)
     )
     has_remote = bool(INFERENCE_BASE_URL)
-
     if has_remote:
+        extract_path = _resolve_remote_path("extract")
+        single_path = _resolve_remote_path("single")
+        if extract_path and single_path:
+            return {
+                "enabled": True,
+                "mode": "remote",
+                "title": "Cloud Inference Enabled",
+                "message": "Uploads are processed through the configured remote inference service.",
+            }
         return {
-            "enabled": True,
-            "mode": "remote",
-            "title": "Cloud Inference Enabled",
-            "message": "Uploads are processed through the configured remote inference service.",
+            "enabled": False,
+            "mode": "disabled",
+            "title": "Upload Inference Disabled",
+            "message": (
+                "LOOKLUX_INFERENCE_URL is set, but required inference endpoints were not found. "
+                "Expected upload endpoints like /extract-parts and /single-garment."
+            ),
         }
 
     if has_local:
@@ -598,8 +669,21 @@ def _decode_data_uri_image(data: str) -> Image.Image:
 def _call_remote_inference(endpoint: str, payload: dict[str, Any]) -> dict[str, Any]:
     if not INFERENCE_BASE_URL:
         raise RuntimeError("Remote inference is not configured.")
-    url = f"{INFERENCE_BASE_URL.rstrip('/')}/{endpoint.lstrip('/')}"
-    response = requests.post(url, json=payload, timeout=INFERENCE_TIMEOUT_SEC)
+
+    endpoint_key = endpoint.strip().lower()
+    if endpoint_key in ("extract", "extract-parts", "/extract-parts"):
+        resolved = _resolve_remote_path("extract")
+    elif endpoint_key in ("single", "single-garment", "/single-garment"):
+        resolved = _resolve_remote_path("single")
+    else:
+        resolved = _normalize_api_path(endpoint)
+
+    if not resolved:
+        raise RuntimeError("Remote inference endpoint was not found on LOOKLUX_INFERENCE_URL.")
+
+    url = f"{INFERENCE_BASE_URL}{resolved}"
+    headers = _build_remote_headers()
+    response = requests.post(url, json=payload, headers=headers, timeout=INFERENCE_TIMEOUT_SEC)
     response.raise_for_status()
     body = response.json()
     if isinstance(body, dict) and body.get("error"):
@@ -646,7 +730,7 @@ def extract_parts_from_upload(upload_bytes: bytes) -> tuple[dict[str, Image.Imag
     if INFERENCE_BASE_URL:
         try:
             payload = {"image_b64": base64.b64encode(upload_bytes).decode("ascii")}
-            body = _call_remote_inference("extract-parts", payload)
+            body = _call_remote_inference("extract", payload)
             parts = body.get("parts") or {}
             cut_imgs: dict[str, Image.Image] = {}
             embs: dict[str, np.ndarray] = {}
@@ -713,7 +797,7 @@ def process_single_upload(upload_bytes: bytes, customer_id: str) -> tuple[str, n
             "customer_id": customer_id,
             "image_b64": base64.b64encode(upload_bytes).decode("ascii"),
         }
-        body = _call_remote_inference("single-garment", payload)
+        body = _call_remote_inference("single", payload)
         part_guess = str(body.get("part_guess") or "shirt")
         emb = np.asarray(body.get("embedding") or [], dtype=np.float32)
         image_b64 = body.get("image_b64")
