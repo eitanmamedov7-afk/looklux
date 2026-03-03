@@ -9,6 +9,7 @@ import random
 import requests
 import threading
 import tempfile
+import time
 import types
 import uuid
 from datetime import datetime, timezone
@@ -60,10 +61,12 @@ LEGAL_CONSENT_TEXT_HASH = hashlib.sha256(
 load_dotenv(dotenv_path=ROOT_DIR / ".env", override=False)
 load_dotenv(dotenv_path=ROOT_DIR / ".env.local", override=True)
 
-DEFAULT_INFERENCE_TIMEOUT_SEC = 60
+DEFAULT_INFERENCE_TIMEOUT_SEC = 120
 DEFAULT_INFERENCE_EXTRACT_PATH = "/extract-parts"
 DEFAULT_INFERENCE_SINGLE_PATH = "/single-garment"
-DEFAULT_PUBLIC_INFERENCE_URLS = "https://mcp-server-hebrew.onrender.com,https://looklux.onrender.com"
+DEFAULT_PUBLIC_INFERENCE_URLS = "https://looklux.onrender.com"
+DEFAULT_INFERENCE_RETRIES = 2
+DEFAULT_INFERENCE_WARMUP_SEC = 20
 
 
 def get_config_value(key: str, default: str = "") -> str:
@@ -162,7 +165,54 @@ def _inference_timeout_sec() -> int:
         parsed = int(raw)
     except Exception:
         return DEFAULT_INFERENCE_TIMEOUT_SEC
-    return max(5, min(300, parsed))
+    return max(5, min(600, parsed))
+
+
+def _inference_retries() -> int:
+    raw = _strip_wrapping_quotes(get_config_value("LOOKLUX_INFERENCE_RETRIES", str(DEFAULT_INFERENCE_RETRIES)))
+    try:
+        parsed = int(raw)
+    except Exception:
+        return DEFAULT_INFERENCE_RETRIES
+    return max(0, min(5, parsed))
+
+
+def _inference_warmup_sec() -> int:
+    raw = _strip_wrapping_quotes(get_config_value("LOOKLUX_INFERENCE_WARMUP_SEC", str(DEFAULT_INFERENCE_WARMUP_SEC)))
+    try:
+        parsed = int(raw)
+    except Exception:
+        return DEFAULT_INFERENCE_WARMUP_SEC
+    return max(0, min(120, parsed))
+
+
+def _is_retryable_status(status_code: int) -> bool:
+    return status_code in (408, 425, 429, 500, 502, 503, 504)
+
+
+def _is_retryable_exception(error: Exception) -> bool:
+    retryable_types = (
+        requests.exceptions.Timeout,
+        requests.exceptions.ConnectionError,
+        requests.exceptions.ChunkedEncodingError,
+    )
+    return isinstance(error, retryable_types)
+
+
+def _warmup_remote_base(base_url: str, timeout_sec: int, warmup_sec: int, headers: dict[str, str]) -> None:
+    if warmup_sec <= 0:
+        return
+    health_urls = [f"{base_url}/health", f"{base_url}/"]
+    deadline = time.time() + float(warmup_sec)
+    while time.time() < deadline:
+        for url in health_urls:
+            try:
+                response = requests.get(url, timeout=min(timeout_sec, 10), headers=headers)
+                if response.status_code < 500:
+                    return
+            except Exception:
+                continue
+        time.sleep(1.0)
 
 
 def _inference_path(key: str, fallback: str) -> str:
@@ -749,32 +799,52 @@ def _call_remote_inference(endpoint: str, payload: dict[str, Any]) -> dict[str, 
         candidates = [_normalize_api_path(endpoint)]
 
     headers = _build_remote_headers()
+    headers.setdefault("Connection", "close")
     timeout_sec = _inference_timeout_sec()
+    retries = _inference_retries()
+    warmup_sec = _inference_warmup_sec()
     last_error: Exception | None = None
     attempted: list[str] = []
+    saw_path_mismatch = False
     for base_url, _ in base_candidates:
+        _warmup_remote_base(base_url, timeout_sec, warmup_sec, headers)
         for path in candidates:
             url = f"{base_url}{_normalize_api_path(path)}"
-            attempted.append(url)
-            try:
-                response = requests.post(url, json=payload, headers=headers, timeout=timeout_sec)
-                if response.status_code in (404, 405):
-                    last_error = RuntimeError(f"{response.status_code} from {path}")
-                    continue
-                response.raise_for_status()
-                body = response.json()
-                if isinstance(body, dict) and body.get("error"):
-                    raise RuntimeError(str(body["error"]))
-                if not isinstance(body, dict):
-                    raise RuntimeError("Remote inference returned an invalid response.")
-                return body
-            except Exception as error:
-                last_error = error
-                continue
+            for attempt_index in range(retries + 1):
+                attempted.append(url)
+                try:
+                    response = requests.post(url, json=payload, headers=headers, timeout=timeout_sec)
+                    if response.status_code in (404, 405):
+                        saw_path_mismatch = True
+                        last_error = RuntimeError(f"{response.status_code} from {path}")
+                        break
+                    if _is_retryable_status(response.status_code) and attempt_index < retries:
+                        last_error = RuntimeError(f"{response.status_code} from {path}")
+                        time.sleep(0.8 * float(attempt_index + 1))
+                        continue
+                    response.raise_for_status()
+                    body = response.json()
+                    if isinstance(body, dict) and body.get("error"):
+                        raise RuntimeError(str(body["error"]))
+                    if not isinstance(body, dict):
+                        raise RuntimeError("Remote inference returned an invalid response.")
+                    return body
+                except Exception as error:
+                    last_error = error
+                    if attempt_index < retries and _is_retryable_exception(error):
+                        time.sleep(0.8 * float(attempt_index + 1))
+                        continue
+                    break
 
+    if saw_path_mismatch and last_error is not None and len(attempted) > 0:
+        raise RuntimeError(
+            "Remote inference endpoint paths were not found on the configured service. "
+            f"Tried: {', '.join(dict.fromkeys(attempted))}. "
+            f"Last error: {last_error}"
+        )
     if last_error is not None:
         raise RuntimeError(
-            f"Remote inference request failed after trying {len(attempted)} endpoint(s): {last_error}"
+            f"Remote inference request failed after trying {len(attempted)} request attempt(s): {last_error}"
         )
     raise RuntimeError("Remote inference endpoint was not found on LOOKLUX_INFERENCE_URL.")
 

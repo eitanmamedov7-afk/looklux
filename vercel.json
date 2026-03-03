@@ -2,7 +2,7 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "version": 2,
   "env": {
-    "LOOKLUX_INFERENCE_URL": "https://mcp-server-hebrew.onrender.com,https://looklux.onrender.com",
+    "LOOKLUX_INFERENCE_URL": "https://looklux.onrender.com",
     "LOOKLUX_ENABLE_DEFAULT_INFERENCE_URL": "1"
   },
   "routes": [
