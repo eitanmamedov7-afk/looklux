@@ -1,339 +1,602 @@
-﻿{% extends "base.html" %}
+{% extends "base.html" %}
 {% block title %}{{ brand }} | App{% endblock %}
 {% block content %}
-<div class="glass-panel hero-panel">
-  <p class="eyebrow">Account</p>
-  <h1 class="title">Workspace</h1>
-  <p class="hero-sub">{{ user.name }} | {{ user.email }}</p>
-  <form method="post" action="{{ url_for('app_page', tab=tab) }}">
-    <input type="hidden" name="action" value="logout" />
-    <button type="submit">Logout</button>
-  </form>
-</div>
+<div class="workspace-layout">
+  <aside class="workspace-sidebar">
+    <section class="card sidebar-card">
+      <p class="eyebrow">Account</p>
+      <h2 class="sidebar-title">Workspace</h2>
+      <p class="hero-sub">{{ user.name }} | {{ user.email }}</p>
+      <form method="post" action="{{ url_for('app_page', tab=tab) }}" class="js-loading-form" data-loading-message="Signing out...">
+        <input type="hidden" name="action" value="logout" />
+        <button type="submit">Logout</button>
+      </form>
+    </section>
 
-<section class="card section-tight">
-  <h3>Filters</h3>
-  <form method="post" action="{{ url_for('app_page', tab=tab) }}" class="form-grid">
-    <input type="hidden" name="action" value="update_filters" />
-    <input type="hidden" name="tab" value="{{ tab }}" />
-    <label>Tags
-      <select name="tags_filter" multiple size="4">
-        {% for tag in tag_options %}
-          <option value="{{ tag }}" {% if tag in filters.tags_filter %}selected{% endif %}>{{ tag }}</option>
-        {% endfor %}
-      </select>
-    </label>
-    <label>Min score (0-100)
-      <input type="number" name="threshold_pct" min="0" max="100" value="{{ filters.threshold_pct }}" />
-    </label>
-    <label>Top K
-      <input type="number" name="top_k" min="1" max="100" value="{{ filters.top_k }}" />
-    </label>
-    <div class="form-actions"><button type="submit">Apply filters</button></div>
-  </form>
-</section>
+    <section class="card sidebar-card">
+      <h3>Filters</h3>
+      <p class="muted">These filters apply to matching, recommendations, and wardrobe queries.</p>
+      <form method="post"
+            action="{{ url_for('app_page', tab=tab) }}"
+            class="form-grid sidebar-filters js-loading-form"
+            data-loading-message="Applying filters...">
+        <input type="hidden" name="action" value="update_filters" />
+        <input type="hidden" name="tab" value="{{ tab }}" />
+        <label>Tags
+          <select name="tags_filter" multiple size="6">
+            {% for tag in tag_options %}
+              <option value="{{ tag }}" {% if tag in filters.tags_filter %}selected{% endif %}>{{ tag }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>Min score (0-100)
+          <input type="number" name="threshold_pct" min="0" max="100" value="{{ filters.threshold_pct }}" />
+        </label>
+        <label>Top K
+          <input type="number" name="top_k" min="1" max="100" value="{{ filters.top_k }}" />
+        </label>
+        <div class="form-actions"><button type="submit">Apply filters</button></div>
+      </form>
+    </section>
 
-<nav class="tabs section-tight">
-  <a href="{{ url_for('app_page', tab='add') }}" class="{% if tab == 'add' %}tab-active{% endif %}">Add Outfit -> Wardrobe</a>
-  <a href="{{ url_for('app_page', tab='match1') }}" class="{% if tab == 'match1' %}tab-active{% endif %}">Match 1 Item</a>
-  <a href="{{ url_for('app_page', tab='match2') }}" class="{% if tab == 'match2' %}tab-active{% endif %}">Match 2 Items</a>
-  <a href="{{ url_for('app_page', tab='recommend') }}" class="{% if tab == 'recommend' %}tab-active{% endif %}">Recommend Outfits</a>
-  <a href="{{ url_for('app_page', tab='saved') }}" class="{% if tab == 'saved' %}tab-active{% endif %}">Saved Outfits</a>
-</nav>
+    <nav class="card sidebar-card sidebar-tabs">
+      <a href="{{ url_for('app_page', tab='add') }}" class="{% if tab == 'add' %}tab-active{% endif %}">Add Outfit -> Wardrobe</a>
+      <a href="{{ url_for('app_page', tab='match1') }}" class="{% if tab == 'match1' %}tab-active{% endif %}">Match 1 Item</a>
+      <a href="{{ url_for('app_page', tab='match2') }}" class="{% if tab == 'match2' %}tab-active{% endif %}">Match 2 Items</a>
+      <a href="{{ url_for('app_page', tab='recommend') }}" class="{% if tab == 'recommend' %}tab-active{% endif %}">Suggest Best Recommendations</a>
+      <a href="{{ url_for('app_page', tab='saved') }}" class="{% if tab == 'saved' %}tab-active{% endif %}">Saved Outfits</a>
+    </nav>
 
-{% if tab == 'add' %}
-  <section class="card section-tight">
-    <h3>Upload outfit image (shirt + pants + shoes)</h3>
-    <form method="post" enctype="multipart/form-data" action="{{ url_for('app_page', tab='add') }}" class="form-stack">
-      <input type="hidden" name="action" value="upload_outfit" />
-      <label>Outfit photo
-        <input type="file" name="upload_outfit" accept=".jpg,.jpeg,.png,.webp" required />
-      </label>
-      <label class="inline-check"><input type="checkbox" name="auto_style" checked /> Auto-detect style from wardrobe tags</label>
-      <label>Tags for saved garments
-        <select name="tags_save" multiple size="4">
-          {% for tag in tag_options %}
-            <option value="{{ tag }}">{{ tag }}</option>
-          {% endfor %}
-        </select>
-      </label>
-      <button type="submit">Extract parts + Save to Wardrobe</button>
-    </form>
-
-    {% if pending_outfit %}
-      <div class="review-box">
-        <h4>Duplicate check review</h4>
-        <p class="muted">Review similar parts and confirm what to save.</p>
-        {% if pending_outfit_image %}
-          <img src="{{ pending_outfit_image }}" alt="Pending outfit preview" class="preview-img" />
+    {% if inference_status %}
+      <section class="card sidebar-card inference-status inference-{{ inference_status.mode }}">
+        <h3>{{ inference_status.title }}</h3>
+        <p class="muted">{{ inference_status.message }}</p>
+        {% if inference_status.base_url %}
+          <p class="muted tiny">Remote URL: {{ inference_status.base_url }}</p>
         {% endif %}
-        <form method="post" action="{{ url_for('app_page', tab='add') }}" class="form-stack">
-          <input type="hidden" name="action" value="confirm_outfit_review" />
-          {% for part in part_order %}
-            {% set sim = pending_outfit_similar.get(part) %}
-            {% if sim %}
-              <label class="inline-check">
-                <input type="checkbox" name="save_anyway_{{ part }}" />
-                Save {{ part }} anyway ({{ '%.2f'|format(sim.similarity_pct) }}% similarity)
-              </label>
-              {% if sim.image_fs_id %}
-                <img src="{{ url_for('media_file', file_id=sim.image_fs_id) }}" alt="Existing {{ part }}" class="small-preview" />
-              {% endif %}
-            {% endif %}
-          {% endfor %}
-          <button type="submit">Save reviewed garments</button>
-        </form>
-      </div>
-    {% endif %}
-  </section>
-
-  <section class="card section-tight">
-    <h3>Add single garment (auto-detect type)</h3>
-    <form method="post" enctype="multipart/form-data" action="{{ url_for('app_page', tab='add') }}" class="form-stack">
-      <input type="hidden" name="action" value="upload_single" />
-      <label>Garment photo
-        <input type="file" name="upload_garment" accept=".jpg,.jpeg,.png,.webp" required />
-      </label>
-      <label class="inline-check"><input type="checkbox" name="auto_style_single" checked /> Auto-detect style</label>
-      <label>Tags
-        <select name="tags_manual" multiple size="4">
-          {% for tag in tag_options %}
-            <option value="{{ tag }}">{{ tag }}</option>
-          {% endfor %}
-        </select>
-      </label>
-      <button type="submit">Save garment</button>
-    </form>
-
-    {% if pending_single %}
-      <div class="review-box">
-        <h4>Single garment duplicate review</h4>
-        {% if pending_single_similar %}
-          <p class="muted">
-            Detected {{ pending_single_similar.part_guess }} with {{ '%.2f'|format(pending_single_similar.similarity_pct) }}% similarity.
+        {% if inference_status.extract_path or inference_status.single_path %}
+          <p class="muted tiny">
+            Paths: {{ inference_status.extract_path }} | {{ inference_status.single_path }}
           </p>
         {% endif %}
-        {% if pending_single_image %}
-          <img src="{{ pending_single_image }}" alt="Pending single preview" class="preview-img" />
-        {% endif %}
-        {% if pending_single_similar and pending_single_similar.image_fs_id %}
-          <img src="{{ url_for('media_file', file_id=pending_single_similar.image_fs_id) }}" alt="Existing similar" class="small-preview" />
-        {% endif %}
-        <div class="two-col">
-          <form method="post" action="{{ url_for('app_page', tab='add') }}" class="form-stack">
-            <input type="hidden" name="action" value="confirm_single_review" />
-            <label class="inline-check"><input type="checkbox" name="save_anyway_single" /> Save anyway</label>
-            <button type="submit">Save reviewed garment</button>
-          </form>
-          <form method="post" action="{{ url_for('app_page', tab='add') }}" class="form-stack">
-            <input type="hidden" name="action" value="skip_single_review" />
-            <button type="submit">Skip this garment</button>
-          </form>
-        </div>
-      </div>
+      </section>
     {% endif %}
-  </section>
-{% endif %}
+  </aside>
 
-{% if tab == 'match1' %}
-  <section class="card section-tight">
-    <h3>Pick 1 item and find matches</h3>
-    <form method="post" action="{{ url_for('app_page', tab='match1') }}" class="form-grid">
-      <input type="hidden" name="action" value="run_match1" />
-      <label>Choose start type
-        <select name="start_part" required>
-          <option value="">Choose type...</option>
-          {% for part in part_order %}
-            <option value="{{ part }}">{{ part }}</option>
-          {% endfor %}
-        </select>
-      </label>
-      <label>Choose garment
-        <select name="start_garment_id" required>
-          <option value="">Select garment...</option>
-          {% for part in part_order %}
-            {% for item in wardrobes[part] %}
-              <option value="{{ item._id }}">{{ part }} #{{ loop.index }}</option>
-            {% endfor %}
-          {% endfor %}
-        </select>
-      </label>
-      <label>Candidates per missing part
-        <input type="number" name="cand_each" min="20" max="200" value="80" />
-      </label>
-      <div class="form-actions"><button type="submit">Get recommendations</button></div>
-    </form>
-  </section>
+  <div class="workspace-main">
+    <div class="glass-panel hero-panel">
+      <p class="eyebrow">LookLux</p>
+      <h1 class="title">Style Engine</h1>
+      <p class="hero-sub">Upload garments, run matches, and save the best outfit combinations.</p>
+    </div>
 
-  <section class="results-grid section-tight">
-    {% for card in match1_cards %}
-      <article class="card outfit-card">
-        <div class="triptych">
-          <img src="{{ url_for('media_file', file_id=card.shirt_image) }}" alt="shirt" />
-          <img src="{{ url_for('media_file', file_id=card.pants_image) }}" alt="pants" />
-          <img src="{{ url_for('media_file', file_id=card.shoes_image) }}" alt="shoes" />
-        </div>
-        <p><strong>Score:</strong> {{ card.score_label }}</p>
-        <form method="post" action="{{ url_for('app_page', tab='match1') }}">
-          <input type="hidden" name="action" value="save_match1" />
-          <input type="hidden" name="result_index" value="{{ loop.index0 }}" />
-          <button type="submit">Save outfit</button>
+    {% if tab == 'add' %}
+      <section class="card section-tight">
+        <h3>Upload outfit image (shirt + pants + shoes)</h3>
+        <form method="post"
+              enctype="multipart/form-data"
+              action="{{ url_for('app_page', tab='add') }}"
+              class="form-stack js-loading-form"
+              data-loading-message="Extracting outfit parts...">
+          <input type="hidden" name="action" value="upload_outfit" />
+          <label>Outfit photo
+            <input type="file"
+                   name="upload_outfit"
+                   accept=".jpg,.jpeg,.png,.webp"
+                   required
+                   data-preview-target="upload-outfit-preview" />
+          </label>
+          <div id="upload-outfit-preview" class="upload-preview-shell">
+            <span class="upload-preview-empty">Selected image preview will appear here.</span>
+          </div>
+          <label class="inline-check"><input type="checkbox" name="auto_style" checked /> Auto-detect style from wardrobe tags</label>
+          <label>Tags for saved garments
+            <select name="tags_save" multiple size="4">
+              {% for tag in tag_options %}
+                <option value="{{ tag }}">{{ tag }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <button type="submit">Extract parts + Save to Wardrobe</button>
         </form>
-      </article>
-    {% endfor %}
-  </section>
-{% endif %}
 
-{% if tab == 'match2' %}
-  <section class="card section-tight">
-    <h3>Pick 2 items and complete the outfit</h3>
-    <form method="post" action="{{ url_for('app_page', tab='match2') }}" class="form-grid">
-      <input type="hidden" name="action" value="run_match2" />
-      <label>First type
-        <select name="part_a" required>
-          <option value="">Choose type...</option>
-          {% for part in part_order %}
-            <option value="{{ part }}">{{ part }}</option>
-          {% endfor %}
-        </select>
-      </label>
-      <label>First garment
-        <select name="garment_a_id" required>
-          <option value="">Select garment...</option>
-          {% for part in part_order %}
-            {% for item in wardrobes[part] %}
-              <option value="{{ item._id }}">{{ part }} #{{ loop.index }}</option>
-            {% endfor %}
-          {% endfor %}
-        </select>
-      </label>
-      <label>Second type
-        <select name="part_b" required>
-          <option value="">Choose type...</option>
-          {% for part in part_order %}
-            <option value="{{ part }}">{{ part }}</option>
-          {% endfor %}
-        </select>
-      </label>
-      <label>Second garment
-        <select name="garment_b_id" required>
-          <option value="">Select garment...</option>
-          {% for part in part_order %}
-            {% for item in wardrobes[part] %}
-              <option value="{{ item._id }}">{{ part }} #{{ loop.index }}</option>
-            {% endfor %}
-          {% endfor %}
-        </select>
-      </label>
-      <label>Candidates for missing part
-        <input type="number" name="cand_each2" min="20" max="300" value="120" />
-      </label>
-      <div class="form-actions"><button type="submit">Find best match</button></div>
-    </form>
-  </section>
+        {% if pending_outfit %}
+          <div class="review-box">
+            <h4>Duplicate check review</h4>
+            <p class="muted">Review similar parts and confirm what to save.</p>
+            {% if pending_outfit_image %}
+              <img src="{{ pending_outfit_image }}" alt="Pending outfit preview" class="preview-img" />
+            {% endif %}
+            <form method="post"
+                  action="{{ url_for('app_page', tab='add') }}"
+                  class="form-stack js-loading-form"
+                  data-loading-message="Saving reviewed garments...">
+              <input type="hidden" name="action" value="confirm_outfit_review" />
+              {% for part in part_order %}
+                {% set sim = pending_outfit_similar.get(part) %}
+                {% if sim %}
+                  <label class="inline-check">
+                    <input type="checkbox" name="save_anyway_{{ part }}" />
+                    Save {{ part }} anyway ({{ '%.2f'|format(sim.similarity_pct) }}% similarity)
+                  </label>
+                  {% if sim.image_fs_id %}
+                    <img src="{{ url_for('media_file', file_id=sim.image_fs_id) }}" alt="Existing {{ part }}" class="small-preview" />
+                  {% endif %}
+                {% endif %}
+              {% endfor %}
+              <button type="submit">Save reviewed garments</button>
+            </form>
+          </div>
+        {% endif %}
+      </section>
 
-  <section class="results-grid section-tight">
-    {% for card in match2_cards %}
-      <article class="card outfit-card">
-        <div class="triptych">
-          <img src="{{ url_for('media_file', file_id=card.shirt_image) }}" alt="shirt" />
-          <img src="{{ url_for('media_file', file_id=card.pants_image) }}" alt="pants" />
-          <img src="{{ url_for('media_file', file_id=card.shoes_image) }}" alt="shoes" />
-        </div>
-        <p><strong>Score:</strong> {{ card.score_label }}</p>
-        <form method="post" action="{{ url_for('app_page', tab='match2') }}">
-          <input type="hidden" name="action" value="save_match2" />
-          <input type="hidden" name="result_index" value="{{ loop.index0 }}" />
-          <button type="submit">Save outfit</button>
+      <section class="card section-tight">
+        <h3>Add single garment (auto-detect type)</h3>
+        <form method="post"
+              enctype="multipart/form-data"
+              action="{{ url_for('app_page', tab='add') }}"
+              class="form-stack js-loading-form"
+              data-loading-message="Analyzing garment...">
+          <input type="hidden" name="action" value="upload_single" />
+          <label>Garment photo
+            <input type="file"
+                   name="upload_garment"
+                   accept=".jpg,.jpeg,.png,.webp"
+                   required
+                   data-preview-target="upload-single-preview" />
+          </label>
+          <div id="upload-single-preview" class="upload-preview-shell">
+            <span class="upload-preview-empty">Selected image preview will appear here.</span>
+          </div>
+          <label class="inline-check"><input type="checkbox" name="auto_style_single" checked /> Auto-detect style</label>
+          <label>Tags
+            <select name="tags_manual" multiple size="4">
+              {% for tag in tag_options %}
+                <option value="{{ tag }}">{{ tag }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <button type="submit">Save garment</button>
         </form>
-      </article>
-    {% endfor %}
-  </section>
-{% endif %}
 
-{% if tab == 'recommend' %}
-  <section class="card section-tight">
-    <h3>Recommend outfits (random sampling)</h3>
-    <form method="post" action="{{ url_for('app_page', tab='recommend') }}" class="form-grid">
-      <input type="hidden" name="action" value="run_recommend" />
-      <label>How many samples
-        <input type="number" name="samples" min="200" max="100000" value="5000" />
-      </label>
-      <label>Max outfits to return
-        <input type="number" name="max_outfits" min="1" value="20" />
-      </label>
-      <div class="form-actions"><button type="submit">Generate</button></div>
-    </form>
-  </section>
+        {% if pending_single %}
+          <div class="review-box">
+            <h4>Single garment duplicate review</h4>
+            {% if pending_single_similar %}
+              <p class="muted">
+                Detected {{ pending_single_similar.part_guess }} with {{ '%.2f'|format(pending_single_similar.similarity_pct) }}% similarity.
+              </p>
+            {% endif %}
+            {% if pending_single_image %}
+              <img src="{{ pending_single_image }}" alt="Pending single preview" class="preview-img" />
+            {% endif %}
+            {% if pending_single_similar and pending_single_similar.image_fs_id %}
+              <img src="{{ url_for('media_file', file_id=pending_single_similar.image_fs_id) }}" alt="Existing similar" class="small-preview" />
+            {% endif %}
+            <div class="two-col">
+              <form method="post"
+                    action="{{ url_for('app_page', tab='add') }}"
+                    class="form-stack js-loading-form"
+                    data-loading-message="Saving reviewed garment...">
+                <input type="hidden" name="action" value="confirm_single_review" />
+                <label class="inline-check"><input type="checkbox" name="save_anyway_single" /> Save anyway</label>
+                <button type="submit">Save reviewed garment</button>
+              </form>
+              <form method="post"
+                    action="{{ url_for('app_page', tab='add') }}"
+                    class="form-stack js-loading-form"
+                    data-loading-message="Skipping reviewed garment...">
+                <input type="hidden" name="action" value="skip_single_review" />
+                <button type="submit">Skip this garment</button>
+              </form>
+            </div>
+          </div>
+        {% endif %}
+      </section>
+    {% endif %}
 
-  <section class="results-grid section-tight">
-    {% for card in rec_cards %}
-      <article class="card outfit-card">
-        <div class="triptych">
-          <img src="{{ url_for('media_file', file_id=card.shirt_image) }}" alt="shirt" />
-          <img src="{{ url_for('media_file', file_id=card.pants_image) }}" alt="pants" />
-          <img src="{{ url_for('media_file', file_id=card.shoes_image) }}" alt="shoes" />
-        </div>
-        <p><strong>Score:</strong> {{ card.score_label }}</p>
-        <form method="post" action="{{ url_for('app_page', tab='recommend') }}">
-          <input type="hidden" name="action" value="save_recommend" />
-          <input type="hidden" name="result_index" value="{{ loop.index0 }}" />
-          <button type="submit">Save outfit</button>
+    {% if tab == 'match1' %}
+      <section class="card section-tight">
+        <h3>Pick 1 item and find matches</h3>
+        <form method="post"
+              action="{{ url_for('app_page', tab='match1') }}"
+              class="form-grid js-loading-form"
+              data-loading-message="Running Match 1...">
+          <input type="hidden" name="action" value="run_match1" />
+          <label>Choose start type
+            <select name="start_part" id="start-part-select" required>
+              <option value="">Choose type...</option>
+              {% for part in part_order %}
+                <option value="{{ part }}">{{ part }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <label>Choose garment
+            <select name="start_garment_id" id="start-garment-select" required>
+              <option value="">Select garment...</option>
+              {% for part in part_order %}
+                {% for item in wardrobes[part] %}
+                  <option value="{{ item._id }}" data-part="{{ part }}">{{ part }} #{{ loop.index }}{% if item.tags %} | {{ item.tags|join(', ') }}{% endif %}</option>
+                {% endfor %}
+              {% endfor %}
+            </select>
+          </label>
+          <label>Candidates per missing part
+            <input type="number" name="cand_each" min="20" max="200" value="80" />
+          </label>
+          <div class="form-actions"><button type="submit">Get recommendations</button></div>
         </form>
-      </article>
-    {% endfor %}
-  </section>
-{% endif %}
+      </section>
 
-{% if tab == 'saved' %}
-  <section class="card section-tight">
-    <h3>Saved outfits</h3>
-    <form method="get" action="{{ url_for('app_page') }}" class="form-grid">
-      <input type="hidden" name="tab" value="saved" />
-      <label>Min saved score (0-100)
-        <input type="number" name="saved_min_score" min="0" max="100" value="{{ saved_min_score }}" />
-      </label>
-      <label>Styles
-        <select name="saved_style" multiple size="4">
-          {% for tag in tag_options %}
-            <option value="{{ tag }}" {% if tag in saved_style_filter %}selected{% endif %}>{{ tag }}</option>
-          {% endfor %}
-        </select>
-      </label>
-      <label>Per page
-        <input type="number" name="saved_page_size" min="1" max="100" value="{{ saved_page_size }}" />
-      </label>
-      <label>Page
-        <input type="number" name="saved_page" min="1" max="{{ saved_total_pages }}" value="{{ saved_page }}" />
-      </label>
-      <div class="form-actions"><button type="submit">Apply</button></div>
-    </form>
-    <p class="muted">Showing {{ saved_start }}-{{ saved_end }} of {{ saved_total }}</p>
-  </section>
+      <section class="results-grid section-tight">
+        {% for card in match1_cards %}
+          <article class="card outfit-card">
+            <div class="triptych">
+              {% if card.shirt_image %}
+                <img src="{{ url_for('media_file', file_id=card.shirt_image) }}" alt="shirt" />
+              {% else %}
+                <div class="image-placeholder">Shirt missing</div>
+              {% endif %}
+              {% if card.pants_image %}
+                <img src="{{ url_for('media_file', file_id=card.pants_image) }}" alt="pants" />
+              {% else %}
+                <div class="image-placeholder">Pants missing</div>
+              {% endif %}
+              {% if card.shoes_image %}
+                <img src="{{ url_for('media_file', file_id=card.shoes_image) }}" alt="shoes" />
+              {% else %}
+                <div class="image-placeholder">Shoes missing</div>
+              {% endif %}
+            </div>
+            <p><strong>Score:</strong> {{ card.score_label }}</p>
+            <form method="post"
+                  action="{{ url_for('app_page', tab='match1') }}"
+                  class="js-loading-form"
+                  data-loading-message="Saving outfit...">
+              <input type="hidden" name="action" value="save_match1" />
+              <input type="hidden" name="result_index" value="{{ loop.index0 }}" />
+              <button type="submit" {% if not card.can_save %}disabled{% endif %}>Save outfit</button>
+            </form>
+            {% if not card.can_save %}
+              <p class="muted tiny">This result cannot be saved because one or more garments are missing.</p>
+            {% endif %}
+          </article>
+        {% endfor %}
+      </section>
+    {% endif %}
 
-  <section class="results-grid section-tight">
-    {% for card in saved_cards %}
-      <article class="card outfit-card">
-        <div class="triptych">
-          <img src="{{ url_for('media_file', file_id=card.shirt_image) }}" alt="shirt" />
-          <img src="{{ url_for('media_file', file_id=card.pants_image) }}" alt="pants" />
-          <img src="{{ url_for('media_file', file_id=card.shoes_image) }}" alt="shoes" />
-        </div>
-        <p><strong>Score:</strong> {{ card.score_label }}</p>
-        <p class="muted">tags: {{ card.tags }} | source: {{ card.source }} | saved_at: {{ card.created_at }}</p>
-        <form method="post" action="{{ url_for('app_page', tab='saved') }}">
-          <input type="hidden" name="action" value="delete_saved_outfit" />
-          <input type="hidden" name="outfit_id" value="{{ card.id }}" />
-          <button type="submit">Delete</button>
+    {% if tab == 'match2' %}
+      <section class="card section-tight">
+        <h3>Pick 2 items and complete the outfit</h3>
+        <form method="post"
+              action="{{ url_for('app_page', tab='match2') }}"
+              class="form-grid js-loading-form"
+              data-loading-message="Running Match 2...">
+          <input type="hidden" name="action" value="run_match2" />
+          <label>First type
+            <select name="part_a" id="part-a-select" required>
+              <option value="">Choose type...</option>
+              {% for part in part_order %}
+                <option value="{{ part }}">{{ part }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <label>First garment
+            <select name="garment_a_id" id="garment-a-select" required>
+              <option value="">Select garment...</option>
+              {% for part in part_order %}
+                {% for item in wardrobes[part] %}
+                  <option value="{{ item._id }}" data-part="{{ part }}">{{ part }} #{{ loop.index }}{% if item.tags %} | {{ item.tags|join(', ') }}{% endif %}</option>
+                {% endfor %}
+              {% endfor %}
+            </select>
+          </label>
+          <label>Second type
+            <select name="part_b" id="part-b-select" required>
+              <option value="">Choose type...</option>
+              {% for part in part_order %}
+                <option value="{{ part }}">{{ part }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <label>Second garment
+            <select name="garment_b_id" id="garment-b-select" required>
+              <option value="">Select garment...</option>
+              {% for part in part_order %}
+                {% for item in wardrobes[part] %}
+                  <option value="{{ item._id }}" data-part="{{ part }}">{{ part }} #{{ loop.index }}{% if item.tags %} | {{ item.tags|join(', ') }}{% endif %}</option>
+                {% endfor %}
+              {% endfor %}
+            </select>
+          </label>
+          <label>Candidates for missing part
+            <input type="number" name="cand_each2" min="20" max="300" value="120" />
+          </label>
+          <div class="form-actions"><button type="submit">Find best match</button></div>
         </form>
-      </article>
-    {% endfor %}
-  </section>
+      </section>
 
-  <section class="card section-tight">
-    <h3>Garment Management</h3>
-    <p class="muted">Garment deletion moved to a separate page for cleaner workflow.</p>
-    <a href="{{ url_for('delete_garments_page') }}" class="button-link">Open Delete Garments page</a>
-  </section>
-{% endif %}
+      <section class="results-grid section-tight">
+        {% for card in match2_cards %}
+          <article class="card outfit-card">
+            <div class="triptych">
+              {% if card.shirt_image %}
+                <img src="{{ url_for('media_file', file_id=card.shirt_image) }}" alt="shirt" />
+              {% else %}
+                <div class="image-placeholder">Shirt missing</div>
+              {% endif %}
+              {% if card.pants_image %}
+                <img src="{{ url_for('media_file', file_id=card.pants_image) }}" alt="pants" />
+              {% else %}
+                <div class="image-placeholder">Pants missing</div>
+              {% endif %}
+              {% if card.shoes_image %}
+                <img src="{{ url_for('media_file', file_id=card.shoes_image) }}" alt="shoes" />
+              {% else %}
+                <div class="image-placeholder">Shoes missing</div>
+              {% endif %}
+            </div>
+            <p><strong>Score:</strong> {{ card.score_label }}</p>
+            <form method="post"
+                  action="{{ url_for('app_page', tab='match2') }}"
+                  class="js-loading-form"
+                  data-loading-message="Saving outfit...">
+              <input type="hidden" name="action" value="save_match2" />
+              <input type="hidden" name="result_index" value="{{ loop.index0 }}" />
+              <button type="submit" {% if not card.can_save %}disabled{% endif %}>Save outfit</button>
+            </form>
+            {% if not card.can_save %}
+              <p class="muted tiny">This result cannot be saved because one or more garments are missing.</p>
+            {% endif %}
+          </article>
+        {% endfor %}
+      </section>
+    {% endif %}
+
+    {% if tab == 'recommend' %}
+      <section class="card section-tight">
+        <h3>Recommend outfits (random sampling)</h3>
+        <form method="post"
+              action="{{ url_for('app_page', tab='recommend') }}"
+              class="form-grid js-loading-form"
+              data-loading-message="Generating recommendations...">
+          <input type="hidden" name="action" value="run_recommend" />
+          <label>How many samples
+            <input type="number" name="samples" min="200" max="100000" value="5000" />
+          </label>
+          <label>Max outfits to return
+            <input type="number" name="max_outfits" min="1" value="20" />
+          </label>
+          <div class="form-actions"><button type="submit">Generate</button></div>
+        </form>
+      </section>
+
+      <section class="results-grid section-tight">
+        {% for card in rec_cards %}
+          <article class="card outfit-card">
+            <div class="triptych">
+              {% if card.shirt_image %}
+                <img src="{{ url_for('media_file', file_id=card.shirt_image) }}" alt="shirt" />
+              {% else %}
+                <div class="image-placeholder">Shirt missing</div>
+              {% endif %}
+              {% if card.pants_image %}
+                <img src="{{ url_for('media_file', file_id=card.pants_image) }}" alt="pants" />
+              {% else %}
+                <div class="image-placeholder">Pants missing</div>
+              {% endif %}
+              {% if card.shoes_image %}
+                <img src="{{ url_for('media_file', file_id=card.shoes_image) }}" alt="shoes" />
+              {% else %}
+                <div class="image-placeholder">Shoes missing</div>
+              {% endif %}
+            </div>
+            <p><strong>Score:</strong> {{ card.score_label }}</p>
+            <form method="post"
+                  action="{{ url_for('app_page', tab='recommend') }}"
+                  class="js-loading-form"
+                  data-loading-message="Saving outfit...">
+              <input type="hidden" name="action" value="save_recommend" />
+              <input type="hidden" name="result_index" value="{{ loop.index0 }}" />
+              <button type="submit" {% if not card.can_save %}disabled{% endif %}>Save outfit</button>
+            </form>
+            {% if not card.can_save %}
+              <p class="muted tiny">This result cannot be saved because one or more garments are missing.</p>
+            {% endif %}
+          </article>
+        {% endfor %}
+      </section>
+    {% endif %}
+
+    {% if tab == 'saved' %}
+      <section class="card section-tight">
+        <h3>Saved outfits</h3>
+        <form method="get" action="{{ url_for('app_page') }}" class="form-grid">
+          <input type="hidden" name="tab" value="saved" />
+          <label>Min saved score (0-100)
+            <input type="number" name="saved_min_score" min="0" max="100" value="{{ saved_min_score }}" />
+          </label>
+          <label>Styles
+            <select name="saved_style" multiple size="4">
+              {% for tag in tag_options %}
+                <option value="{{ tag }}" {% if tag in saved_style_filter %}selected{% endif %}>{{ tag }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <label>Per page
+            <input type="number" name="saved_page_size" min="1" max="100" value="{{ saved_page_size }}" />
+          </label>
+          <label>Page
+            <input type="number" name="saved_page" min="1" max="{{ saved_total_pages }}" value="{{ saved_page }}" />
+          </label>
+          <div class="form-actions"><button type="submit">Apply</button></div>
+        </form>
+        <p class="muted">Showing {{ saved_start }}-{{ saved_end }} of {{ saved_total }}</p>
+      </section>
+
+      <section class="results-grid section-tight">
+        {% for card in saved_cards %}
+          <article class="card outfit-card">
+            <div class="triptych">
+              {% if card.shirt_image %}
+                <img src="{{ url_for('media_file', file_id=card.shirt_image) }}" alt="shirt" />
+              {% else %}
+                <div class="image-placeholder">Shirt missing</div>
+              {% endif %}
+              {% if card.pants_image %}
+                <img src="{{ url_for('media_file', file_id=card.pants_image) }}" alt="pants" />
+              {% else %}
+                <div class="image-placeholder">Pants missing</div>
+              {% endif %}
+              {% if card.shoes_image %}
+                <img src="{{ url_for('media_file', file_id=card.shoes_image) }}" alt="shoes" />
+              {% else %}
+                <div class="image-placeholder">Shoes missing</div>
+              {% endif %}
+            </div>
+            <p><strong>Score:</strong> {{ card.score_label }}</p>
+            <p class="muted">tags: {{ card.tags }} | source: {{ card.source }} | saved_at: {{ card.created_at }}</p>
+            <form method="post"
+                  action="{{ url_for('app_page', tab='saved') }}"
+                  class="js-loading-form"
+                  data-loading-message="Deleting saved outfit...">
+              <input type="hidden" name="action" value="delete_saved_outfit" />
+              <input type="hidden" name="outfit_id" value="{{ card.id }}" />
+              <button type="submit">Delete</button>
+            </form>
+          </article>
+        {% endfor %}
+      </section>
+
+      <section class="card section-tight">
+        <h3>Garment Management</h3>
+        <p class="muted">Garment deletion moved to a separate page for cleaner workflow.</p>
+        <a href="{{ url_for('delete_garments_page') }}" class="button-link">Open Delete Garments page</a>
+      </section>
+    {% endif %}
+  </div>
+</div>
+
+<div id="app-loading-overlay" class="app-loading-overlay" aria-live="polite">
+  <div class="app-loading-card">
+    <div class="loader-ring" aria-hidden="true"></div>
+    <div id="app-loading-message" class="loader-text">Working...</div>
+  </div>
+</div>
+
+<script>
+  (function () {
+    const loadingOverlay = document.getElementById("app-loading-overlay");
+    const loadingMessage = document.getElementById("app-loading-message");
+
+    document.querySelectorAll("form.js-loading-form").forEach(function (form) {
+      form.addEventListener("submit", function () {
+        if (!loadingOverlay || !loadingMessage) return;
+        const message = form.getAttribute("data-loading-message") || "Working...";
+        loadingMessage.textContent = message;
+        loadingOverlay.classList.add("is-visible");
+      });
+    });
+
+    function bindPreview(input) {
+      const targetId = input.getAttribute("data-preview-target");
+      if (!targetId) return;
+      const target = document.getElementById(targetId);
+      if (!target) return;
+
+      let currentUrl = null;
+      input.addEventListener("change", function () {
+        if (currentUrl) {
+          URL.revokeObjectURL(currentUrl);
+          currentUrl = null;
+        }
+
+        target.innerHTML = "";
+        if (!input.files || !input.files.length) {
+          const empty = document.createElement("span");
+          empty.className = "upload-preview-empty";
+          empty.textContent = "Selected image preview will appear here.";
+          target.appendChild(empty);
+          return;
+        }
+
+        const file = input.files[0];
+        if (!file.type || file.type.indexOf("image/") !== 0) {
+          const invalid = document.createElement("span");
+          invalid.className = "upload-preview-empty";
+          invalid.textContent = "Please select an image file.";
+          target.appendChild(invalid);
+          return;
+        }
+
+        const img = document.createElement("img");
+        currentUrl = URL.createObjectURL(file);
+        img.src = currentUrl;
+        img.alt = "Selected upload preview";
+        img.className = "preview-img";
+        target.appendChild(img);
+      });
+    }
+
+    document.querySelectorAll("input[type='file'][data-preview-target]").forEach(bindPreview);
+
+    function bindGarmentSelect(partSelectId, garmentSelectId) {
+      const partSelect = document.getElementById(partSelectId);
+      const garmentSelect = document.getElementById(garmentSelectId);
+      if (!partSelect || !garmentSelect) return;
+
+      const placeholder = garmentSelect.querySelector("option[value='']");
+      const allOptions = Array.from(garmentSelect.querySelectorAll("option[data-part]")).map(function (opt) {
+        return opt.cloneNode(true);
+      });
+
+      function refresh() {
+        const selectedPart = partSelect.value;
+        const previousValue = garmentSelect.value;
+        garmentSelect.innerHTML = "";
+        if (placeholder) garmentSelect.appendChild(placeholder.cloneNode(true));
+
+        allOptions.forEach(function (opt) {
+          if (!selectedPart || opt.getAttribute("data-part") === selectedPart) {
+            garmentSelect.appendChild(opt.cloneNode(true));
+          }
+        });
+
+        const hasPrevious = Array.from(garmentSelect.options).some(function (opt) {
+          return opt.value === previousValue;
+        });
+        if (hasPrevious) {
+          garmentSelect.value = previousValue;
+        } else {
+          garmentSelect.value = "";
+        }
+      }
+
+      partSelect.addEventListener("change", refresh);
+      refresh();
+    }
+
+    bindGarmentSelect("start-part-select", "start-garment-select");
+    bindGarmentSelect("part-a-select", "garment-a-select");
+    bindGarmentSelect("part-b-select", "garment-b-select");
+
+    const partA = document.getElementById("part-a-select");
+    const partB = document.getElementById("part-b-select");
+    if (partA && partB) {
+      function syncPartSelection() {
+        const selectedA = partA.value;
+        Array.from(partB.options).forEach(function (opt) {
+          if (!opt.value) return;
+          opt.disabled = selectedA && opt.value === selectedA;
+        });
+        if (selectedA && partB.value === selectedA) {
+          partB.value = "";
+          partB.dispatchEvent(new Event("change"));
+        }
+      }
+      partA.addEventListener("change", syncPartSelection);
+      syncPartSelection();
+    }
+  })();
+</script>
 {% endblock %}

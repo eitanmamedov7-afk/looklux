@@ -60,13 +60,9 @@ LEGAL_CONSENT_TEXT_HASH = hashlib.sha256(
 load_dotenv(dotenv_path=ROOT_DIR / ".env", override=False)
 load_dotenv(dotenv_path=ROOT_DIR / ".env.local", override=True)
 
-INFERENCE_BASE_URL = os.environ.get("LOOKLUX_INFERENCE_URL", "").strip().rstrip("/")
-INFERENCE_TIMEOUT_SEC = int(os.environ.get("LOOKLUX_INFERENCE_TIMEOUT_SEC", "60"))
-INFERENCE_EXTRACT_PATH = os.environ.get("LOOKLUX_INFERENCE_EXTRACT_PATH", "/extract-parts").strip() or "/extract-parts"
-INFERENCE_SINGLE_PATH = os.environ.get("LOOKLUX_INFERENCE_SINGLE_PATH", "/single-garment").strip() or "/single-garment"
-INFERENCE_AUTH_HEADER = os.environ.get("LOOKLUX_INFERENCE_AUTH_HEADER", "").strip()
-INFERENCE_AUTH_VALUE = os.environ.get("LOOKLUX_INFERENCE_AUTH_VALUE", "").strip()
-INFERENCE_BEARER_TOKEN = os.environ.get("LOOKLUX_INFERENCE_BEARER_TOKEN", "").strip()
+DEFAULT_INFERENCE_TIMEOUT_SEC = 60
+DEFAULT_INFERENCE_EXTRACT_PATH = "/extract-parts"
+DEFAULT_INFERENCE_SINGLE_PATH = "/single-garment"
 
 
 def get_config_value(key: str, default: str = "") -> str:
@@ -85,21 +81,60 @@ def _normalize_api_path(path: str) -> str:
     return path
 
 
+def _strip_wrapping_quotes(value: str) -> str:
+    text = str(value or "").strip()
+    if len(text) >= 2 and text[0] == text[-1] and text[0] in ("'", '"'):
+        text = text[1:-1].strip()
+    return text
+
+
+def _inference_base_url() -> str:
+    candidates = (
+        get_config_value("LOOKLUX_INFERENCE_URL", ""),
+        get_config_value("INFERENCE_BASE_URL", ""),
+        get_config_value("INFERENCE_URL", ""),
+    )
+    for raw in candidates:
+        value = _strip_wrapping_quotes(raw).rstrip("/")
+        if value:
+            return value
+    return ""
+
+
+def _inference_timeout_sec() -> int:
+    raw = _strip_wrapping_quotes(get_config_value("LOOKLUX_INFERENCE_TIMEOUT_SEC", str(DEFAULT_INFERENCE_TIMEOUT_SEC)))
+    try:
+        parsed = int(raw)
+    except Exception:
+        return DEFAULT_INFERENCE_TIMEOUT_SEC
+    return max(5, min(300, parsed))
+
+
+def _inference_path(key: str, fallback: str) -> str:
+    configured = _strip_wrapping_quotes(get_config_value(key, fallback))
+    if not configured:
+        configured = fallback
+    return _normalize_api_path(configured)
+
+
 def _build_remote_headers() -> dict[str, str]:
     headers: dict[str, str] = {}
-    if INFERENCE_AUTH_HEADER and INFERENCE_AUTH_VALUE:
-        headers[INFERENCE_AUTH_HEADER] = INFERENCE_AUTH_VALUE
-    if INFERENCE_BEARER_TOKEN:
-        headers["Authorization"] = f"Bearer {INFERENCE_BEARER_TOKEN}"
+    auth_header = _strip_wrapping_quotes(get_config_value("LOOKLUX_INFERENCE_AUTH_HEADER", ""))
+    auth_value = _strip_wrapping_quotes(get_config_value("LOOKLUX_INFERENCE_AUTH_VALUE", ""))
+    bearer_token = _strip_wrapping_quotes(get_config_value("LOOKLUX_INFERENCE_BEARER_TOKEN", ""))
+    if auth_header and auth_value:
+        headers[auth_header] = auth_value
+    if bearer_token:
+        headers["Authorization"] = f"Bearer {bearer_token}"
     return headers
 
 
 def _inference_path_candidates(kind: str) -> list[str]:
     if kind == "extract":
-        configured = _normalize_api_path(INFERENCE_EXTRACT_PATH)
+        configured = _inference_path("LOOKLUX_INFERENCE_EXTRACT_PATH", DEFAULT_INFERENCE_EXTRACT_PATH)
         return list(dict.fromkeys([configured, "/extract-parts", "/api/extract-parts"]))
     if kind == "single":
-        configured = _normalize_api_path(INFERENCE_SINGLE_PATH)
+        configured = _inference_path("LOOKLUX_INFERENCE_SINGLE_PATH", DEFAULT_INFERENCE_SINGLE_PATH)
         return list(dict.fromkeys([configured, "/single-garment", "/api/single-garment"]))
     return ["/"]
 
@@ -112,13 +147,19 @@ def get_inference_status() -> dict[str, Any]:
         and FashnHumanParser is not None
         and bool(LABELS_TO_IDS)
     )
-    has_remote = bool(INFERENCE_BASE_URL)
+    remote_base_url = _inference_base_url()
+    has_remote = bool(remote_base_url)
+    extract_path = _inference_path("LOOKLUX_INFERENCE_EXTRACT_PATH", DEFAULT_INFERENCE_EXTRACT_PATH)
+    single_path = _inference_path("LOOKLUX_INFERENCE_SINGLE_PATH", DEFAULT_INFERENCE_SINGLE_PATH)
     if has_remote:
         return {
             "enabled": True,
             "mode": "remote",
             "title": "Cloud Inference Enabled",
             "message": "Uploads are processed through the configured remote inference service.",
+            "base_url": remote_base_url,
+            "extract_path": extract_path,
+            "single_path": single_path,
         }
 
     if has_local:
@@ -127,6 +168,9 @@ def get_inference_status() -> dict[str, Any]:
             "mode": "local",
             "title": "Local Inference Enabled",
             "message": "Uploads are processed using local parser + embedding models.",
+            "base_url": "",
+            "extract_path": extract_path,
+            "single_path": single_path,
         }
 
     return {
@@ -137,6 +181,9 @@ def get_inference_status() -> dict[str, Any]:
             "Image extraction/upload processing is disabled in this deployment. "
             "Set LOOKLUX_INFERENCE_URL to enable cloud inference."
         ),
+        "base_url": "",
+        "extract_path": extract_path,
+        "single_path": single_path,
     }
 
 
@@ -628,8 +675,12 @@ def _decode_data_uri_image(data: str) -> Image.Image:
 
 
 def _call_remote_inference(endpoint: str, payload: dict[str, Any]) -> dict[str, Any]:
-    if not INFERENCE_BASE_URL:
-        raise RuntimeError("Remote inference is not configured.")
+    base_url = _inference_base_url()
+    if not base_url:
+        raise RuntimeError(
+            "Remote inference is not configured. "
+            "Set LOOKLUX_INFERENCE_URL (or INFERENCE_BASE_URL / INFERENCE_URL)."
+        )
 
     endpoint_key = endpoint.strip().lower()
     if endpoint_key in ("extract", "extract-parts", "/extract-parts"):
@@ -640,11 +691,14 @@ def _call_remote_inference(endpoint: str, payload: dict[str, Any]) -> dict[str, 
         candidates = [_normalize_api_path(endpoint)]
 
     headers = _build_remote_headers()
+    timeout_sec = _inference_timeout_sec()
     last_error: Exception | None = None
+    attempted: list[str] = []
     for path in candidates:
-        url = f"{INFERENCE_BASE_URL}{_normalize_api_path(path)}"
+        url = f"{base_url}{_normalize_api_path(path)}"
+        attempted.append(url)
         try:
-            response = requests.post(url, json=payload, headers=headers, timeout=INFERENCE_TIMEOUT_SEC)
+            response = requests.post(url, json=payload, headers=headers, timeout=timeout_sec)
             if response.status_code in (404, 405):
                 last_error = RuntimeError(f"{response.status_code} from {path}")
                 continue
@@ -660,45 +714,23 @@ def _call_remote_inference(endpoint: str, payload: dict[str, Any]) -> dict[str, 
             continue
 
     if last_error is not None:
-        raise RuntimeError(f"Remote inference request failed: {last_error}")
+        raise RuntimeError(
+            f"Remote inference request failed after trying {len(attempted)} endpoint(s): {last_error}"
+        )
     raise RuntimeError("Remote inference endpoint was not found on LOOKLUX_INFERENCE_URL.")
 
 
+def _score_parts_or_default(embs: dict[str, np.ndarray]) -> float:
+    try:
+        device, _, _, _, ipca, mlp = load_models()
+        return score_from_parts(embs["shirt"], embs["pants"], embs["shoes"], ipca, mlp, device)
+    except Exception:
+        return 0.0
+
+
 def extract_parts_from_upload(upload_bytes: bytes) -> tuple[dict[str, Image.Image] | None, dict[str, np.ndarray] | None, float | str]:
-    device, parser, resnet, preprocess, ipca, mlp = load_models()
-    has_local_extractor = parser is not None and resnet is not None and preprocess is not None and bool(LABELS_TO_IDS)
-
-    if has_local_extractor:
-        ensure_dirs()
-        tmp_path = TMP_DIR / f"upload_{uuid.uuid4().hex}.png"
-        tmp_path.write_bytes(upload_bytes)
-        try:
-            seg = parser.predict(str(tmp_path))
-            img = Image.open(io.BytesIO(upload_bytes)).convert("RGBA")
-
-            cut_imgs: dict[str, Image.Image] = {}
-            embs: dict[str, np.ndarray] = {}
-            missing_parts = []
-            for out_part, model_label in PARTS.items():
-                cut = cutout_part_rgba(img, seg, model_label, crop=True)
-                if cut is None:
-                    missing_parts.append(out_part)
-                    continue
-                cut_imgs[out_part] = cut
-                embs[out_part] = emb_from_pil(cut, device, resnet, preprocess)
-
-            if missing_parts:
-                return None, None, "Missing parts: " + ", ".join(missing_parts)
-
-            score = score_from_parts(embs["shirt"], embs["pants"], embs["shoes"], ipca, mlp, device)
-            return cut_imgs, embs, score
-        finally:
-            try:
-                tmp_path.unlink(missing_ok=True)
-            except Exception:
-                pass
-
-    if INFERENCE_BASE_URL:
+    remote_error: Exception | None = None
+    if _inference_base_url():
         try:
             payload = {"image_b64": base64.b64encode(upload_bytes).decode("ascii")}
             body = _call_remote_inference("extract", payload)
@@ -713,74 +745,130 @@ def extract_parts_from_upload(upload_bytes: bytes) -> tuple[dict[str, Image.Imag
                     return None, None, f"Missing parts: {part}"
                 cut_imgs[part] = _decode_data_uri_image(str(image_b64))
                 embs[part] = np.asarray(embedding, dtype=np.float32)
-            score = score_from_parts(embs["shirt"], embs["pants"], embs["shoes"], ipca, mlp, device)
+            score = _score_parts_or_default(embs)
             return cut_imgs, embs, score
         except Exception as error:
-            return None, None, f"Remote inference failed: {error}"
+            remote_error = error
 
-    error = (
-        "Image extraction is unavailable in this deployment because local ML dependencies are not installed. "
-        "Set LOOKLUX_INFERENCE_URL to a remote inference service."
-    )
-    return None, None, error
+    try:
+        device, parser, resnet, preprocess, ipca, mlp = load_models()
+    except Exception as error:
+        if remote_error is not None:
+            return None, None, f"Remote inference failed: {remote_error}"
+        return None, None, (
+            "Image extraction is unavailable in this deployment because local ML dependencies are not installed. "
+            "Set LOOKLUX_INFERENCE_URL to a remote inference service."
+        )
+
+    has_local_extractor = parser is not None and resnet is not None and preprocess is not None and bool(LABELS_TO_IDS)
+    if not has_local_extractor:
+        if remote_error is not None:
+            return None, None, f"Remote inference failed: {remote_error}"
+        return None, None, (
+            "Image extraction is unavailable in this deployment because local ML dependencies are not installed. "
+            "Set LOOKLUX_INFERENCE_URL to a remote inference service."
+        )
+
+    ensure_dirs()
+    tmp_path = TMP_DIR / f"upload_{uuid.uuid4().hex}.png"
+    tmp_path.write_bytes(upload_bytes)
+    try:
+        seg = parser.predict(str(tmp_path))
+        img = Image.open(io.BytesIO(upload_bytes)).convert("RGBA")
+
+        cut_imgs: dict[str, Image.Image] = {}
+        embs: dict[str, np.ndarray] = {}
+        missing_parts = []
+        for out_part, model_label in PARTS.items():
+            cut = cutout_part_rgba(img, seg, model_label, crop=True)
+            if cut is None:
+                missing_parts.append(out_part)
+                continue
+            cut_imgs[out_part] = cut
+            embs[out_part] = emb_from_pil(cut, device, resnet, preprocess)
+
+        if missing_parts:
+            return None, None, "Missing parts: " + ", ".join(missing_parts)
+
+        score = score_from_parts(embs["shirt"], embs["pants"], embs["shoes"], ipca, mlp, device)
+        return cut_imgs, embs, score
+    finally:
+        try:
+            tmp_path.unlink(missing_ok=True)
+        except Exception:
+            pass
 
 
 def process_single_upload(upload_bytes: bytes, customer_id: str) -> tuple[str, np.ndarray, Image.Image]:
-    device, parser, resnet, preprocess, _, _ = load_models()
-    has_local_extractor = resnet is not None and preprocess is not None
-
-    if has_local_extractor:
-        image_rgba = Image.open(io.BytesIO(upload_bytes)).convert("RGBA")
-        ensure_dirs()
-        temp_path = TMP_DIR / f"single_{uuid.uuid4().hex}.png"
-        temp_path.write_bytes(upload_bytes)
+    remote_error: Exception | None = None
+    if _inference_base_url():
         try:
-            part_guess = infer_part_from_parser(parser, str(temp_path))
-            emb_full = emb_from_pil(image_rgba, device, resnet, preprocess)
-            if part_guess is None:
-                part_guess = infer_part_by_similarity(customer_id, emb_full)
-            if part_guess is None:
-                part_guess = "shirt"
-
-            emb = emb_full
-            save_source_img = image_rgba
-            if parser is not None and LABELS_TO_IDS and part_guess in PARTS:
-                try:
-                    seg = parser.predict(str(temp_path))
-                    cut_masked = cutout_part_rgba(image_rgba, seg, PARTS[part_guess], crop=True)
-                    cut_bbox = cutout_part_bbox_rgba(image_rgba, seg, PARTS[part_guess], crop=True)
-                    if cut_masked is not None:
-                        emb = emb_from_pil(cut_masked, device, resnet, preprocess)
-                    if cut_bbox is not None:
-                        save_source_img = cut_bbox
-                except Exception:
-                    pass
-
+            payload = {
+                "customer_id": customer_id,
+                "image_b64": base64.b64encode(upload_bytes).decode("ascii"),
+            }
+            body = _call_remote_inference("single", payload)
+            part_guess = str(body.get("part_guess") or "shirt")
+            emb = np.asarray(body.get("embedding") or [], dtype=np.float32)
+            image_b64 = body.get("image_b64")
+            if emb.size == 0 or not image_b64:
+                raise RuntimeError("Remote single-garment inference returned incomplete payload.")
+            save_source_img = _decode_data_uri_image(str(image_b64))
             return part_guess, emb, save_source_img
-        finally:
+        except Exception as error:
+            remote_error = error
+
+    try:
+        device, parser, resnet, preprocess, _, _ = load_models()
+    except Exception:
+        if remote_error is not None:
+            raise RuntimeError(f"Remote single-garment inference failed: {remote_error}")
+        raise RuntimeError(
+            "Single-garment processing is unavailable in this deployment because local ML dependencies are not installed. "
+            "Set LOOKLUX_INFERENCE_URL to a remote inference service."
+        )
+
+    has_local_extractor = resnet is not None and preprocess is not None
+    if not has_local_extractor:
+        if remote_error is not None:
+            raise RuntimeError(f"Remote single-garment inference failed: {remote_error}")
+        raise RuntimeError(
+            "Single-garment processing is unavailable in this deployment because local ML dependencies are not installed. "
+            "Set LOOKLUX_INFERENCE_URL to a remote inference service."
+        )
+
+    image_rgba = Image.open(io.BytesIO(upload_bytes)).convert("RGBA")
+    ensure_dirs()
+    temp_path = TMP_DIR / f"single_{uuid.uuid4().hex}.png"
+    temp_path.write_bytes(upload_bytes)
+    try:
+        part_guess = infer_part_from_parser(parser, str(temp_path))
+        emb_full = emb_from_pil(image_rgba, device, resnet, preprocess)
+        if part_guess is None:
+            part_guess = infer_part_by_similarity(customer_id, emb_full)
+        if part_guess is None:
+            part_guess = "shirt"
+
+        emb = emb_full
+        save_source_img = image_rgba
+        if parser is not None and LABELS_TO_IDS and part_guess in PARTS:
             try:
-                temp_path.unlink(missing_ok=True)
+                seg = parser.predict(str(temp_path))
+                cut_masked = cutout_part_rgba(image_rgba, seg, PARTS[part_guess], crop=True)
+                cut_bbox = cutout_part_bbox_rgba(image_rgba, seg, PARTS[part_guess], crop=True)
+                if cut_masked is not None:
+                    emb = emb_from_pil(cut_masked, device, resnet, preprocess)
+                if cut_bbox is not None:
+                    save_source_img = cut_bbox
             except Exception:
                 pass
 
-    if INFERENCE_BASE_URL:
-        payload = {
-            "customer_id": customer_id,
-            "image_b64": base64.b64encode(upload_bytes).decode("ascii"),
-        }
-        body = _call_remote_inference("single", payload)
-        part_guess = str(body.get("part_guess") or "shirt")
-        emb = np.asarray(body.get("embedding") or [], dtype=np.float32)
-        image_b64 = body.get("image_b64")
-        if emb.size == 0 or not image_b64:
-            raise RuntimeError("Remote single-garment inference returned incomplete payload.")
-        save_source_img = _decode_data_uri_image(str(image_b64))
         return part_guess, emb, save_source_img
-
-    raise RuntimeError(
-        "Single-garment processing is unavailable in this deployment because local ML dependencies are not installed. "
-        "Set LOOKLUX_INFERENCE_URL to a remote inference service."
-    )
+    finally:
+        try:
+            temp_path.unlink(missing_ok=True)
+        except Exception:
+            pass
 
 
 def make_pending_token(prefix: str) -> str:
@@ -997,22 +1085,29 @@ def run_match_one(
     pools[start_part] = [chosen]
 
     scored: list[dict[str, Any]] = []
+    scored_all: list[dict[str, Any]] = []
     for shirt_doc in pools["shirt"]:
         for pants_doc in pools["pants"]:
             for shoes_doc in pools["shoes"]:
                 score = score_combo_fast(shirt_doc, pants_doc, shoes_doc, ipca, mlp, device)
+                row = {
+                    "score": float(score),
+                    "shirt_id": str(shirt_doc["_id"]),
+                    "pants_id": str(pants_doc["_id"]),
+                    "shoes_id": str(shoes_doc["_id"]),
+                }
+                scored_all.append(row)
                 if score >= threshold:
-                    scored.append(
-                        {
-                            "score": float(score),
-                            "shirt_id": str(shirt_doc["_id"]),
-                            "pants_id": str(pants_doc["_id"]),
-                            "shoes_id": str(shoes_doc["_id"]),
-                        }
-                    )
+                    scored.append(row)
 
     scored.sort(key=lambda row: row["score"], reverse=True)
-    return scored[:top_k], None
+    scored = scored[:top_k]
+    message = None
+    if not scored and scored_all:
+        scored_all.sort(key=lambda row: row["score"], reverse=True)
+        scored = scored_all[:top_k]
+        message = "No outfits met Min score. Showing best available matches."
+    return scored, message
 
 
 def run_match_two(
@@ -1093,6 +1188,7 @@ def run_recommendations(
 
     seen: set[tuple[str, str, str]] = set()
     scored: list[dict[str, Any]] = []
+    scored_all: list[dict[str, Any]] = []
     for _ in range(samples):
         shirt_doc = random.choice(shirts)
         pants_doc = random.choice(pants)
@@ -1104,18 +1200,24 @@ def run_recommendations(
         seen.add(combo)
 
         score = score_combo_fast(shirt_doc, pants_doc, shoes_doc, ipca, mlp, device)
+        row = {
+            "score": float(score),
+            "shirt_id": combo[0],
+            "pants_id": combo[1],
+            "shoes_id": combo[2],
+        }
+        scored_all.append(row)
         if score >= threshold:
-            scored.append(
-                {
-                    "score": float(score),
-                    "shirt_id": combo[0],
-                    "pants_id": combo[1],
-                    "shoes_id": combo[2],
-                }
-            )
+            scored.append(row)
 
     scored.sort(key=lambda row: row["score"], reverse=True)
-    return scored[: max(1, int(max_outfits))], None
+    scored = scored[: max(1, int(max_outfits))]
+    message = None
+    if not scored and scored_all:
+        scored_all.sort(key=lambda row: row["score"], reverse=True)
+        scored = scored_all[: max(1, int(max_outfits))]
+        message = "No outfits met Min score. Showing best available recommendations."
+    return scored, message
 
 
 def score_combo_fast(shirt_doc: dict[str, Any], pants_doc: dict[str, Any], shoes_doc: dict[str, Any], ipca: Any, mlp: dict[str, np.ndarray], device: str) -> float:

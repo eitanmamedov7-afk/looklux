@@ -107,30 +107,53 @@ def set_filter_state_from_request() -> None:
 
 
 def format_results_for_display(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    def normalize_id(value: Any) -> str:
+        text = str(value or "").strip()
+        if not text or text.lower() == "none":
+            return ""
+        return text
+
     ids: list[str] = []
     for row in results:
-        ids.extend([str(row.get("shirt_id", "")), str(row.get("pants_id", "")), str(row.get("shoes_id", ""))])
+        for key in ("shirt_id", "pants_id", "shoes_id"):
+            garment_id = normalize_id(row.get(key))
+            if garment_id:
+                ids.append(garment_id)
 
     docs_by_id = core.get_garments_by_ids(ids)
 
     cards: list[dict[str, Any]] = []
     for row in results:
-        shirt_doc = docs_by_id.get(str(row.get("shirt_id")))
-        pants_doc = docs_by_id.get(str(row.get("pants_id")))
-        shoes_doc = docs_by_id.get(str(row.get("shoes_id")))
-        if not (shirt_doc and pants_doc and shoes_doc):
+        shirt_id = normalize_id(row.get("shirt_id"))
+        pants_id = normalize_id(row.get("pants_id"))
+        shoes_id = normalize_id(row.get("shoes_id"))
+        if not (shirt_id and pants_id and shoes_id):
             continue
+
+        shirt_doc = docs_by_id.get(shirt_id)
+        pants_doc = docs_by_id.get(pants_id)
+        shoes_doc = docs_by_id.get(shoes_id)
+
+        missing_parts: list[str] = []
+        if shirt_doc is None:
+            missing_parts.append("shirt")
+        if pants_doc is None:
+            missing_parts.append("pants")
+        if shoes_doc is None:
+            missing_parts.append("shoes")
 
         cards.append(
             {
                 "score": float(row.get("score", 0.0)),
                 "score_label": core.fmt_score_100(float(row.get("score", 0.0))),
-                "shirt_id": str(row.get("shirt_id")),
-                "pants_id": str(row.get("pants_id")),
-                "shoes_id": str(row.get("shoes_id")),
-                "shirt_image": shirt_doc.get("image_fs_id"),
-                "pants_image": pants_doc.get("image_fs_id"),
-                "shoes_image": shoes_doc.get("image_fs_id"),
+                "shirt_id": shirt_id,
+                "pants_id": pants_id,
+                "shoes_id": shoes_id,
+                "shirt_image": str(shirt_doc.get("image_fs_id")) if shirt_doc and shirt_doc.get("image_fs_id") else None,
+                "pants_image": str(pants_doc.get("image_fs_id")) if pants_doc and pants_doc.get("image_fs_id") else None,
+                "shoes_image": str(shoes_doc.get("image_fs_id")) if shoes_doc and shoes_doc.get("image_fs_id") else None,
+                "can_save": len(missing_parts) == 0,
+                "missing_parts": missing_parts,
                 "source": row.get("source"),
             }
         )
@@ -775,6 +798,7 @@ def app_page():
         saved_total_pages=total_pages,
         saved_min_score=min_saved_score_pct,
         saved_style_filter=saved_style_filter,
+        inference_status=core.get_inference_status(),
     )
 
 
