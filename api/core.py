@@ -780,12 +780,13 @@ def extract_parts_from_upload(upload_bytes: bytes) -> tuple[dict[str, Image.Imag
         embs: dict[str, np.ndarray] = {}
         missing_parts = []
         for out_part, model_label in PARTS.items():
-            cut = cutout_part_rgba(img, seg, model_label, crop=True)
-            if cut is None:
+            cut_masked = cutout_part_rgba(img, seg, model_label, crop=True)
+            cut_bbox = cutout_part_bbox_rgba(img, seg, model_label, crop=True)
+            if cut_masked is None:
                 missing_parts.append(out_part)
                 continue
-            cut_imgs[out_part] = cut
-            embs[out_part] = emb_from_pil(cut, device, resnet, preprocess)
+            cut_imgs[out_part] = cut_bbox if cut_bbox is not None else cut_masked
+            embs[out_part] = emb_from_pil(cut_masked, device, resnet, preprocess)
 
         if missing_parts:
             return None, None, "Missing parts: " + ", ".join(missing_parts)

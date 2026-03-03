@@ -141,13 +141,15 @@ def extract_parts() -> Any:
         parts: dict[str, dict[str, Any]] = {}
         missing: list[str] = []
         for part in PART_ORDER:
-            cut = _cutout_masked_rgba(image_rgba, seg, PARTS[part])
-            if cut is None:
+            cut_masked = _cutout_masked_rgba(image_rgba, seg, PARTS[part])
+            cut_bbox = _cutout_bbox_rgba(image_rgba, seg, PARTS[part])
+            if cut_masked is None:
                 missing.append(part)
                 continue
-            emb = _embedding_from_pil(cut, device, resnet, preprocess)
+            emb = _embedding_from_pil(cut_masked, device, resnet, preprocess)
+            view_img = cut_bbox if cut_bbox is not None else cut_masked
             parts[part] = {
-                "image_b64": _image_to_data_uri(cut),
+                "image_b64": _image_to_data_uri(view_img),
                 "embedding": emb.astype(np.float32).tolist(),
             }
 

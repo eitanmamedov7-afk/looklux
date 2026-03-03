@@ -193,6 +193,26 @@
           </div>
         {% endif %}
       </section>
+
+      {% if latest_added_cards %}
+        <section class="card section-tight">
+          <h3>Recently added garments</h3>
+          <p class="muted">Latest cropped results saved to your wardrobe.</p>
+          <div class="results-grid latest-added-grid">
+            {% for card in latest_added_cards %}
+              <article class="card outfit-card latest-added-card">
+                <div class="single-image-wrap">
+                  <img src="{{ url_for('media_file', file_id=card.image_fs_id) }}" alt="{{ card.part }} preview" />
+                </div>
+                <p><strong>Type:</strong> {{ card.part }}</p>
+                {% if card.tags %}
+                  <p class="muted tiny">Tags: {{ card.tags|join(', ') }}</p>
+                {% endif %}
+              </article>
+            {% endfor %}
+          </div>
+        </section>
+      {% endif %}
     {% endif %}
 
     {% if tab == 'match1' %}

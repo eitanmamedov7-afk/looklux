@@ -225,6 +225,7 @@ st.markdown(
     }
     html, body, [class*="css"], [data-testid="stAppViewContainer"] {
         color: var(--vc-text);
+        font-family: "Segoe UI", system-ui, sans-serif;
     }
 
     [data-testid="stAppViewContainer"] {
@@ -251,7 +252,10 @@ st.markdown(
     .block-container {
         padding-top: 1.1rem;
         padding-bottom: 1.5rem;
+        max-width: 1280px;
     }
+    a { color: #e7e7e7; text-decoration: none; }
+    a:hover { color: #ffffff; }
 
     .glass-panel {
         background: linear-gradient(145deg, rgba(255,255,255,0.1), rgba(255,255,255,0.03));
@@ -318,6 +322,7 @@ st.markdown(
     .hero-panel {
         padding: 24px;
         animation: revealSlide .75s ease-out;
+        margin-bottom: 14px;
     }
     .eyebrow {
         margin: 0;
@@ -329,7 +334,7 @@ st.markdown(
     .hero-title {
         margin: 10px 0 8px 0;
         line-height: 1.05;
-        font-size: clamp(1.85rem, 1.25rem + 1.9vw, 3rem);
+        font-size: clamp(1.7rem, 1.25rem + 1.9vw, 2.8rem);
         font-weight: 800;
     }
     .hero-sub {
@@ -496,32 +501,79 @@ st.markdown(
         color: #f2f2f2 !important;
         backdrop-filter: blur(8px);
     }
-    [data-testid="stTabs"] [data-baseweb="tab-list"] {
+    [data-testid="stTabs"] [data-baseweb="tab-list"],
+    [data-testid="stTabs"] [role="tablist"] {
         gap: 8px;
         flex-wrap: wrap;
+        margin-bottom: 8px;
     }
-    [data-testid="stTabs"] [data-baseweb="tab"] {
-        border-radius: 999px;
-        border: 1px solid rgba(255,255,255,.16);
-        background: rgba(10,10,10,.74);
-        min-width: 170px;
-        padding: 8px 16px;
+    [data-testid="stTabs"] [data-baseweb="tab"],
+    [data-testid="stTabs"] [role="tab"] {
+        border-radius: 12px !important;
+        border: 1px solid rgba(255, 255, 255, 0.18) !important;
+        background: rgba(10, 10, 10, 0.76) !important;
+        min-width: 165px;
+        padding: 10px 12px !important;
         white-space: nowrap;
+        font-size: 12px !important;
+        letter-spacing: 0.07em;
+        text-transform: uppercase;
+        font-weight: 700;
+        color: #f4f4f4 !important;
+    }
+    [data-testid="stTabs"] [aria-selected="true"] {
+        border-color: rgba(255, 255, 255, 0.36) !important;
+        background: rgba(20, 20, 20, 0.94) !important;
+    }
+    [data-testid="stTabs"] [data-baseweb="tab-panel"],
+    [data-testid="stTabs"] [role="tabpanel"] {
+        background: var(--vc-panel);
+        border: 1px solid var(--vc-border);
+        border-radius: 22px;
+        padding: 14px 14px 18px 14px;
+        box-shadow: var(--vc-shadow-soft);
+        backdrop-filter: blur(14px);
     }
     [data-testid="stSidebar"] [data-testid="stPageLink"] a {
-        border-radius: 999px;
-        border: 1px solid rgba(255,255,255,0.16);
-        background: rgba(10,10,10,0.72);
-        padding: 10px 16px;
-        min-width: 156px;
+        border-radius: 12px;
+        border: 1px solid rgba(255, 255, 255, 0.18);
+        background: rgba(10, 10, 10, 0.76);
+        padding: 11px 12px;
+        min-width: 152px;
         white-space: nowrap;
         display: inline-flex;
         justify-content: center;
         align-items: center;
+        font-size: 12px;
+        letter-spacing: 0.07em;
+        text-transform: uppercase;
+        font-weight: 700;
+        color: #f4f4f4 !important;
     }
     [data-testid="stSidebar"] [data-testid="stPageLink"] a:hover {
-        border-color: rgba(255,255,255,0.28);
-        background: rgba(18,18,18,0.82);
+        border-color: rgba(255, 255, 255, 0.34);
+        background: rgba(20, 20, 20, 0.94);
+    }
+    [data-testid="stSidebar"] h3 {
+        margin: 8px 0 8px 0;
+        font-size: 0.92rem;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--vc-muted);
+    }
+    .sidebar-title {
+        margin: 8px 0 6px;
+        font-size: 1.5rem;
+        font-weight: 800;
+    }
+    .sidebar-sub {
+        margin: 0 0 8px 0;
+        color: var(--vc-muted);
+        font-size: 0.95rem;
+        line-height: 1.5;
+    }
+    .section-tight {
+        margin-top: 14px;
     }
 
     @keyframes pulse {
@@ -1151,12 +1203,13 @@ def extract_parts_from_upload(tmp_path: str):
     cut_imgs, embs = {}, {}
     missing_parts = []
     for out_part, model_label in PARTS.items():
-        cut = cutout_part_rgba(img, seg, model_label, crop=True)
-        if cut is None:
+        cut_masked = cutout_part_rgba(img, seg, model_label, crop=True)
+        cut_bbox = cutout_part_bbox_rgba(img, seg, model_label, crop=True)
+        if cut_masked is None:
             missing_parts.append(out_part)
             continue
-        cut_imgs[out_part] = cut
-        embs[out_part] = emb_from_pil(cut, device, resnet, preprocess)
+        cut_imgs[out_part] = cut_bbox if cut_bbox is not None else cut_masked
+        embs[out_part] = emb_from_pil(cut_masked, device, resnet, preprocess)
 
     if missing_parts:
         return None, None, "Missing parts: " + ", ".join(missing_parts)
@@ -1452,12 +1505,13 @@ st.session_state.setdefault("pending_outfit_extract", None)
 st.session_state.setdefault("pending_single_upload", None)
 
 with st.sidebar:
+    st.markdown('<p class="eyebrow">Account</p><div class="sidebar-title">Workspace</div>', unsafe_allow_html=True)
     render_nav_links_in_sidebar(include_delete_garments=True)
     render_legal_links_in_sidebar()
 
     st.markdown("### Account")
     st.write(f"**{customer_name}**")
-    st.caption(customer_email)
+    st.markdown(f'<p class="sidebar-sub">{customer_email}</p>', unsafe_allow_html=True)
     if st.button("Logout", use_container_width=True):
         st.session_state.auth_user = None
         for k in list(st.session_state.keys()):
@@ -1490,6 +1544,17 @@ with st.sidebar:
         st.cache_data.clear()
         st.cache_resource.clear()
         st.rerun()
+
+st.markdown(
+    """
+<div class="hero-panel glass-panel">
+  <p class="eyebrow">LookLux</p>
+  <h1 class="hero-title">Style Engine</h1>
+  <p class="hero-sub">Upload garments, run matches, and save the best outfit combinations.</p>
+</div>
+""",
+    unsafe_allow_html=True,
+)
 
 tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "Add Outfit -> Wardrobe",
@@ -1555,6 +1620,7 @@ with tab1:
 
                         trip = make_triptych(cut_imgs)
                         bordered_image(trip, score=score, caption="Extracted parts", max_width=520)
+                        st.caption("Crops keep the original outfit background (no transparent masking in saved images).")
 
                         status.write("5) Checking for near-duplicate garments by vector similarity.")
                         similar_hits = {}
@@ -1630,6 +1696,7 @@ with tab1:
                 caption="Extracted parts (review)",
                 max_width=520,
             )
+            st.caption("These review crops keep the original outfit background.")
 
             similar_hits = pending.get("similar_hits", {})
             for part in PART_ORDER:

@@ -705,6 +705,23 @@ def app_page():
         for part in core.PART_ORDER
     }
 
+    latest_added_cards: list[dict[str, Any]] = []
+    for part in core.PART_ORDER:
+        for item in wardrobes.get(part, [])[:6]:
+            image_fs_id = item.get("image_fs_id")
+            if not image_fs_id:
+                continue
+            latest_added_cards.append(
+                {
+                    "part": part,
+                    "image_fs_id": str(image_fs_id),
+                    "tags": item.get("tags", []) or [],
+                    "created_at": item.get("created_at"),
+                }
+            )
+    latest_added_cards.sort(key=lambda row: row.get("created_at") or 0, reverse=True)
+    latest_added_cards = latest_added_cards[:9]
+
     match1_results = session.get("match1_results") if isinstance(session.get("match1_results"), list) else []
     match2_results = session.get("match2_results") if isinstance(session.get("match2_results"), list) else []
     rec_results = session.get("rec_results") if isinstance(session.get("rec_results"), list) else []
@@ -783,6 +800,7 @@ def app_page():
         match1_cards=format_results_for_display(match1_results),
         match2_cards=format_results_for_display(match2_results),
         rec_cards=format_results_for_display(rec_results),
+        latest_added_cards=latest_added_cards,
         pending_outfit=pending_outfit,
         pending_outfit_image=pending_outfit_image,
         pending_outfit_similar=pending_outfit_similar,
