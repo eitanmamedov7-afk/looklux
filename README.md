@@ -49,6 +49,12 @@ python api/index.py
 
 Every `git push` to the connected branch triggers a new Vercel deployment.
 
+Note:
+- `vercel.json` now sets a non-secret default `LOOKLUX_INFERENCE_URL` with failover URLs for runtime reliability.
+- If you want a different inference host, set `LOOKLUX_INFERENCE_URL` in Vercel Project Settings and redeploy.
+- You can provide multiple URLs separated by commas (the app will auto-fallback to the next URL).
+- You can disable code-level default fallback by setting `LOOKLUX_ENABLE_DEFAULT_INFERENCE_URL=0`.
+
 ## Note on ML dependencies in Vercel
 
 Vercel Python functions have strict storage limits. To keep deployment size under the limit:

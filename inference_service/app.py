@@ -126,6 +126,17 @@ def health() -> Any:
     return jsonify({"ok": True})
 
 
+@app.get("/")
+def root() -> Any:
+    return jsonify(
+        {
+            "ok": True,
+            "service": "looklux-inference",
+            "endpoints": ["/health", "/extract-parts", "/single-garment"],
+        }
+    )
+
+
 @app.post("/extract-parts")
 def extract_parts() -> Any:
     try:
@@ -193,6 +204,16 @@ def single_garment() -> Any:
         )
     except Exception as error:
         return jsonify({"error": str(error)}), 500
+
+
+@app.post("/api/extract-parts")
+def extract_parts_api_alias() -> Any:
+    return extract_parts()
+
+
+@app.post("/api/single-garment")
+def single_garment_api_alias() -> Any:
+    return single_garment()
 
 
 if __name__ == "__main__":

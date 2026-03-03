@@ -53,6 +53,9 @@
         <p class="muted">{{ inference_status.message }}</p>
         {% if inference_status.base_url %}
           <p class="muted tiny">Remote URL: {{ inference_status.base_url }}</p>
+          {% if inference_status.base_source %}
+            <p class="muted tiny">Source: {{ inference_status.base_source }}</p>
+          {% endif %}
         {% endif %}
         {% if inference_status.extract_path or inference_status.single_path %}
           <p class="muted tiny">

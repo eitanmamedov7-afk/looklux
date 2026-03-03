@@ -63,6 +63,7 @@ load_dotenv(dotenv_path=ROOT_DIR / ".env.local", override=True)
 DEFAULT_INFERENCE_TIMEOUT_SEC = 60
 DEFAULT_INFERENCE_EXTRACT_PATH = "/extract-parts"
 DEFAULT_INFERENCE_SINGLE_PATH = "/single-garment"
+DEFAULT_PUBLIC_INFERENCE_URLS = "https://mcp-server-hebrew.onrender.com,https://looklux.onrender.com"
 
 
 def get_config_value(key: str, default: str = "") -> str:
@@ -88,17 +89,71 @@ def _strip_wrapping_quotes(value: str) -> str:
     return text
 
 
-def _inference_base_url() -> str:
-    candidates = (
-        get_config_value("LOOKLUX_INFERENCE_URL", ""),
-        get_config_value("INFERENCE_BASE_URL", ""),
-        get_config_value("INFERENCE_URL", ""),
+def _normalize_base_urls(value: str) -> list[str]:
+    candidate = _strip_wrapping_quotes(value)
+    if not candidate:
+        return []
+    if "=" in candidate and "://" not in candidate:
+        candidate = _strip_wrapping_quotes(candidate.split("=", 1)[1])
+    if not candidate:
+        return []
+
+    parts = [p.strip() for p in candidate.replace("\n", ",").split(",")]
+    urls: list[str] = []
+    seen: set[str] = set()
+    for part in parts:
+        if not part:
+            continue
+        lowered = part.lower()
+        if not (lowered.startswith("http://") or lowered.startswith("https://")):
+            continue
+        normalized = part.rstrip("/")
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        urls.append(normalized)
+    return urls
+
+
+def _inference_base_url_candidates_with_source() -> list[tuple[str, str]]:
+    env_keys = (
+        "LOOKLUX_INFERENCE_URL",
+        "INFERENCE_BASE_URL",
+        "INFERENCE_URL",
+        "LOOKLUX_INFERENCE_BASE_URL",
+        "LOOKLUX_REMOTE_INFERENCE_URL",
+        "LOOKLUX_INFERENCE_FALLBACK_URL",
     )
-    for raw in candidates:
-        value = _strip_wrapping_quotes(raw).rstrip("/")
-        if value:
-            return value
-    return ""
+    out: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    for key in env_keys:
+        values = _normalize_base_urls(get_config_value(key, ""))
+        for value in values:
+            if value in seen:
+                continue
+            seen.add(value)
+            out.append((value, key))
+
+    default_enabled = get_config_value("LOOKLUX_ENABLE_DEFAULT_INFERENCE_URL", "1") != "0"
+    if default_enabled and get_config_value("VERCEL", "0") == "1":
+        default_urls = _normalize_base_urls(get_config_value("LOOKLUX_DEFAULT_INFERENCE_URL", DEFAULT_PUBLIC_INFERENCE_URLS))
+        for value in default_urls:
+            if value in seen:
+                continue
+            seen.add(value)
+            out.append((value, "LOOKLUX_DEFAULT_INFERENCE_URL(default)"))
+    return out
+
+
+def _inference_base_url_with_source() -> tuple[str, str]:
+    candidates = _inference_base_url_candidates_with_source()
+    if not candidates:
+        return "", ""
+    return candidates[0]
+
+
+def _inference_base_url() -> str:
+    return _inference_base_url_with_source()[0]
 
 
 def _inference_timeout_sec() -> int:
@@ -147,7 +202,7 @@ def get_inference_status() -> dict[str, Any]:
         and FashnHumanParser is not None
         and bool(LABELS_TO_IDS)
     )
-    remote_base_url = _inference_base_url()
+    remote_base_url, remote_base_source = _inference_base_url_with_source()
     has_remote = bool(remote_base_url)
     extract_path = _inference_path("LOOKLUX_INFERENCE_EXTRACT_PATH", DEFAULT_INFERENCE_EXTRACT_PATH)
     single_path = _inference_path("LOOKLUX_INFERENCE_SINGLE_PATH", DEFAULT_INFERENCE_SINGLE_PATH)
@@ -158,6 +213,7 @@ def get_inference_status() -> dict[str, Any]:
             "title": "Cloud Inference Enabled",
             "message": "Uploads are processed through the configured remote inference service.",
             "base_url": remote_base_url,
+            "base_source": remote_base_source,
             "extract_path": extract_path,
             "single_path": single_path,
         }
@@ -169,6 +225,7 @@ def get_inference_status() -> dict[str, Any]:
             "title": "Local Inference Enabled",
             "message": "Uploads are processed using local parser + embedding models.",
             "base_url": "",
+            "base_source": "",
             "extract_path": extract_path,
             "single_path": single_path,
         }
@@ -179,9 +236,10 @@ def get_inference_status() -> dict[str, Any]:
         "title": "Upload Inference Disabled",
         "message": (
             "Image extraction/upload processing is disabled in this deployment. "
-            "Set LOOKLUX_INFERENCE_URL to enable cloud inference."
+            "Set LOOKLUX_INFERENCE_URL (or INFERENCE_BASE_URL / INFERENCE_URL) to enable cloud inference."
         ),
         "base_url": "",
+        "base_source": "",
         "extract_path": extract_path,
         "single_path": single_path,
     }
@@ -675,8 +733,8 @@ def _decode_data_uri_image(data: str) -> Image.Image:
 
 
 def _call_remote_inference(endpoint: str, payload: dict[str, Any]) -> dict[str, Any]:
-    base_url = _inference_base_url()
-    if not base_url:
+    base_candidates = _inference_base_url_candidates_with_source()
+    if not base_candidates:
         raise RuntimeError(
             "Remote inference is not configured. "
             "Set LOOKLUX_INFERENCE_URL (or INFERENCE_BASE_URL / INFERENCE_URL)."
@@ -694,24 +752,25 @@ def _call_remote_inference(endpoint: str, payload: dict[str, Any]) -> dict[str, 
     timeout_sec = _inference_timeout_sec()
     last_error: Exception | None = None
     attempted: list[str] = []
-    for path in candidates:
-        url = f"{base_url}{_normalize_api_path(path)}"
-        attempted.append(url)
-        try:
-            response = requests.post(url, json=payload, headers=headers, timeout=timeout_sec)
-            if response.status_code in (404, 405):
-                last_error = RuntimeError(f"{response.status_code} from {path}")
+    for base_url, _ in base_candidates:
+        for path in candidates:
+            url = f"{base_url}{_normalize_api_path(path)}"
+            attempted.append(url)
+            try:
+                response = requests.post(url, json=payload, headers=headers, timeout=timeout_sec)
+                if response.status_code in (404, 405):
+                    last_error = RuntimeError(f"{response.status_code} from {path}")
+                    continue
+                response.raise_for_status()
+                body = response.json()
+                if isinstance(body, dict) and body.get("error"):
+                    raise RuntimeError(str(body["error"]))
+                if not isinstance(body, dict):
+                    raise RuntimeError("Remote inference returned an invalid response.")
+                return body
+            except Exception as error:
+                last_error = error
                 continue
-            response.raise_for_status()
-            body = response.json()
-            if isinstance(body, dict) and body.get("error"):
-                raise RuntimeError(str(body["error"]))
-            if not isinstance(body, dict):
-                raise RuntimeError("Remote inference returned an invalid response.")
-            return body
-        except Exception as error:
-            last_error = error
-            continue
 
     if last_error is not None:
         raise RuntimeError(
@@ -757,7 +816,7 @@ def extract_parts_from_upload(upload_bytes: bytes) -> tuple[dict[str, Image.Imag
             return None, None, f"Remote inference failed: {remote_error}"
         return None, None, (
             "Image extraction is unavailable in this deployment because local ML dependencies are not installed. "
-            "Set LOOKLUX_INFERENCE_URL to a remote inference service."
+            "Set LOOKLUX_INFERENCE_URL (or INFERENCE_BASE_URL / INFERENCE_URL) to a remote inference service."
         )
 
     has_local_extractor = parser is not None and resnet is not None and preprocess is not None and bool(LABELS_TO_IDS)
@@ -766,7 +825,7 @@ def extract_parts_from_upload(upload_bytes: bytes) -> tuple[dict[str, Image.Imag
             return None, None, f"Remote inference failed: {remote_error}"
         return None, None, (
             "Image extraction is unavailable in this deployment because local ML dependencies are not installed. "
-            "Set LOOKLUX_INFERENCE_URL to a remote inference service."
+            "Set LOOKLUX_INFERENCE_URL (or INFERENCE_BASE_URL / INFERENCE_URL) to a remote inference service."
         )
 
     ensure_dirs()
@@ -826,7 +885,7 @@ def process_single_upload(upload_bytes: bytes, customer_id: str) -> tuple[str, n
             raise RuntimeError(f"Remote single-garment inference failed: {remote_error}")
         raise RuntimeError(
             "Single-garment processing is unavailable in this deployment because local ML dependencies are not installed. "
-            "Set LOOKLUX_INFERENCE_URL to a remote inference service."
+            "Set LOOKLUX_INFERENCE_URL (or INFERENCE_BASE_URL / INFERENCE_URL) to a remote inference service."
         )
 
     has_local_extractor = resnet is not None and preprocess is not None
@@ -835,7 +894,7 @@ def process_single_upload(upload_bytes: bytes, customer_id: str) -> tuple[str, n
             raise RuntimeError(f"Remote single-garment inference failed: {remote_error}")
         raise RuntimeError(
             "Single-garment processing is unavailable in this deployment because local ML dependencies are not installed. "
-            "Set LOOKLUX_INFERENCE_URL to a remote inference service."
+            "Set LOOKLUX_INFERENCE_URL (or INFERENCE_BASE_URL / INFERENCE_URL) to a remote inference service."
         )
 
     image_rgba = Image.open(io.BytesIO(upload_bytes)).convert("RGBA")
