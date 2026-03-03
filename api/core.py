@@ -62,7 +62,6 @@ load_dotenv(dotenv_path=ROOT_DIR / ".env.local", override=True)
 
 INFERENCE_BASE_URL = os.environ.get("LOOKLUX_INFERENCE_URL", "").strip().rstrip("/")
 INFERENCE_TIMEOUT_SEC = int(os.environ.get("LOOKLUX_INFERENCE_TIMEOUT_SEC", "60"))
-INFERENCE_DISCOVERY_TIMEOUT_SEC = float(os.environ.get("LOOKLUX_INFERENCE_DISCOVERY_TIMEOUT_SEC", "1.5"))
 INFERENCE_EXTRACT_PATH = os.environ.get("LOOKLUX_INFERENCE_EXTRACT_PATH", "/extract-parts").strip() or "/extract-parts"
 INFERENCE_SINGLE_PATH = os.environ.get("LOOKLUX_INFERENCE_SINGLE_PATH", "/single-garment").strip() or "/single-garment"
 INFERENCE_AUTH_HEADER = os.environ.get("LOOKLUX_INFERENCE_AUTH_HEADER", "").strip()
@@ -105,32 +104,6 @@ def _inference_path_candidates(kind: str) -> list[str]:
     return ["/"]
 
 
-def _remote_route_exists(path: str) -> bool:
-    if not INFERENCE_BASE_URL:
-        return False
-    url = f"{INFERENCE_BASE_URL}{_normalize_api_path(path)}"
-    headers = _build_remote_headers()
-    timeout = max(0.5, min(INFERENCE_DISCOVERY_TIMEOUT_SEC, 5.0))
-
-    for method in ("OPTIONS", "HEAD", "GET"):
-        try:
-            response = requests.request(method, url, headers=headers, timeout=timeout, allow_redirects=True)
-            if response.status_code == 404:
-                continue
-            return True
-        except Exception:
-            continue
-    return False
-
-
-@lru_cache(maxsize=2)
-def _resolve_remote_path(kind: str) -> str | None:
-    for path in _inference_path_candidates(kind):
-        if _remote_route_exists(path):
-            return _normalize_api_path(path)
-    return None
-
-
 def get_inference_status() -> dict[str, Any]:
     has_local = (
         torch is not None
@@ -141,23 +114,11 @@ def get_inference_status() -> dict[str, Any]:
     )
     has_remote = bool(INFERENCE_BASE_URL)
     if has_remote:
-        extract_path = _resolve_remote_path("extract")
-        single_path = _resolve_remote_path("single")
-        if extract_path and single_path:
-            return {
-                "enabled": True,
-                "mode": "remote",
-                "title": "Cloud Inference Enabled",
-                "message": "Uploads are processed through the configured remote inference service.",
-            }
         return {
-            "enabled": False,
-            "mode": "disabled",
-            "title": "Upload Inference Disabled",
-            "message": (
-                "LOOKLUX_INFERENCE_URL is set, but required inference endpoints were not found. "
-                "Expected upload endpoints like /extract-parts and /single-garment."
-            ),
+            "enabled": True,
+            "mode": "remote",
+            "title": "Cloud Inference Enabled",
+            "message": "Uploads are processed through the configured remote inference service.",
         }
 
     if has_local:
@@ -672,25 +633,35 @@ def _call_remote_inference(endpoint: str, payload: dict[str, Any]) -> dict[str, 
 
     endpoint_key = endpoint.strip().lower()
     if endpoint_key in ("extract", "extract-parts", "/extract-parts"):
-        resolved = _resolve_remote_path("extract")
+        candidates = _inference_path_candidates("extract")
     elif endpoint_key in ("single", "single-garment", "/single-garment"):
-        resolved = _resolve_remote_path("single")
+        candidates = _inference_path_candidates("single")
     else:
-        resolved = _normalize_api_path(endpoint)
+        candidates = [_normalize_api_path(endpoint)]
 
-    if not resolved:
-        raise RuntimeError("Remote inference endpoint was not found on LOOKLUX_INFERENCE_URL.")
-
-    url = f"{INFERENCE_BASE_URL}{resolved}"
     headers = _build_remote_headers()
-    response = requests.post(url, json=payload, headers=headers, timeout=INFERENCE_TIMEOUT_SEC)
-    response.raise_for_status()
-    body = response.json()
-    if isinstance(body, dict) and body.get("error"):
-        raise RuntimeError(str(body["error"]))
-    if not isinstance(body, dict):
-        raise RuntimeError("Remote inference returned an invalid response.")
-    return body
+    last_error: Exception | None = None
+    for path in candidates:
+        url = f"{INFERENCE_BASE_URL}{_normalize_api_path(path)}"
+        try:
+            response = requests.post(url, json=payload, headers=headers, timeout=INFERENCE_TIMEOUT_SEC)
+            if response.status_code in (404, 405):
+                last_error = RuntimeError(f"{response.status_code} from {path}")
+                continue
+            response.raise_for_status()
+            body = response.json()
+            if isinstance(body, dict) and body.get("error"):
+                raise RuntimeError(str(body["error"]))
+            if not isinstance(body, dict):
+                raise RuntimeError("Remote inference returned an invalid response.")
+            return body
+        except Exception as error:
+            last_error = error
+            continue
+
+    if last_error is not None:
+        raise RuntimeError(f"Remote inference request failed: {last_error}")
+    raise RuntimeError("Remote inference endpoint was not found on LOOKLUX_INFERENCE_URL.")
 
 
 def extract_parts_from_upload(upload_bytes: bytes) -> tuple[dict[str, Image.Image] | None, dict[str, np.ndarray] | None, float | str]:
